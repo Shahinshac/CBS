@@ -1,7 +1,7 @@
 {
-  "buildCommand": "cd frontend && rm -rf node_modules && npm install && npm run build",
-  "outputDirectory": "frontend/build",
-  "framework": "create-react-app",
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/dist",
+  "framework": "vite",
   "rewrites": [
     {
       "source": "/(.*)",
