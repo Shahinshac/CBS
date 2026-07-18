@@ -1,0 +1,359 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ─── Branch ───────────────────────────────────────────────────────────────────
+model Branch {
+  id          String    @id @default(uuid())
+  name        String
+  code        String    @unique
+  address     String?
+  city        String?
+  phone       String?
+  email       String?
+  is_active   Boolean   @default(true)
+  is_deleted  Boolean   @default(false)
+  manager_id  String?
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+  users       User[]
+  accounts    Account[]
+  cash_drawers CashDrawer[]
+
+  @@index([code])
+}
+
+// ─── User ─────────────────────────────────────────────────────────────────────
+model User {
+  id                 String          @id @default(uuid())
+  username           String          @unique
+  email              String          @unique
+  password_hash      String
+  first_name         String
+  last_name          String
+  role               String          @default("customer")
+  phone_number       String?
+  date_of_birth      DateTime?
+  address            String?
+  city               String?
+  pincode            String?
+  kyc_status         String          @default("pending")  // pending|verified|rejected
+  kyc_documents      String?         // JSON string of document refs
+  is_active          Boolean         @default(true)
+  is_verified        Boolean         @default(false)       // Net banking activated
+  is_deleted         Boolean         @default(false)
+  mfa_secret         String?
+  mfa_enabled        Boolean         @default(false)
+  branch_id          String?
+  branch             Branch?         @relation(fields: [branch_id], references: [id], onDelete: SetNull)
+  created_at         DateTime        @default(now())
+  updated_at         DateTime        @updatedAt
+  accounts           Account[]
+  loans              Loan[]
+  audit_logs         AuditLog[]
+  beneficiaries      Beneficiary[]   @relation("UserBeneficiaries")
+  tickets            SupportTicket[]
+  notifications      Notification[]
+  cash_drawers       CashDrawer[]
+  announcements      Announcement[]
+
+  @@index([email])
+  @@index([phone_number])
+  @@index([role])
+  @@index([branch_id])
+}
+
+// ─── Account ──────────────────────────────────────────────────────────────────
+model Account {
+  id                   String            @id @default(uuid())
+  account_number       String            @unique
+  account_type         String            @default("savings")  // savings|current|fd|rd
+  balance              Decimal           @default(0.00) @db.Decimal(18, 2)
+  status               String            @default("active")   // active|frozen|closed|dormant
+  interest_rate        Decimal           @default(3.50) @db.Decimal(5, 2)
+  minimum_balance      Decimal           @default(0.00) @db.Decimal(18, 2)
+  overdraft_limit      Decimal           @default(0.00) @db.Decimal(18, 2)
+  fd_maturity_date     DateTime?
+  fd_tenure_months     Int?
+  user_id              String
+  user                 User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  branch_id            String?
+  branch               Branch?           @relation(fields: [branch_id], references: [id], onDelete: SetNull)
+  created_at           DateTime          @default(now())
+  updated_at           DateTime          @updatedAt
+  sent_transfers       Transaction[]     @relation("FromAccount")
+  received_transfers   Transaction[]     @relation("ToAccount")
+  cards                Card[]
+  bills                Bill[]
+  scheduled_payments   ScheduledPayment[]
+  cheque_books         ChequebookRequest[]
+  cheque_stops         ChequeStop[]
+
+  @@index([user_id])
+  @@index([account_number])
+  @@index([branch_id])
+  @@index([status])
+}
+
+// ─── Transaction ──────────────────────────────────────────────────────────────
+model Transaction {
+  id               String    @id @default(uuid())
+  amount           Decimal   @db.Decimal(18, 2)
+  transaction_type String    // deposit|withdrawal|transfer|bill_payment|loan_disbursement
+  status           String    @default("success")  // success|failed|pending|reversed
+  description      String?
+  reference_number String    @unique @default(uuid())
+  channel          String    @default("branch")   // branch|net_banking|atm|mobile
+  from_account_id  String?
+  from_account     Account?  @relation("FromAccount", fields: [from_account_id], references: [id], onDelete: SetNull)
+  to_account_id    String?
+  to_account       Account?  @relation("ToAccount", fields: [to_account_id], references: [id], onDelete: SetNull)
+  performed_by     String?   // user id of teller/system
+  created_at       DateTime  @default(now())
+
+  @@index([from_account_id])
+  @@index([to_account_id])
+  @@index([created_at])
+  @@index([transaction_type])
+  @@index([reference_number])
+}
+
+// ─── Card ─────────────────────────────────────────────────────────────────────
+model Card {
+  id             String   @id @default(uuid())
+  card_number    String   @unique
+  cvv            String
+  expiry_date    String
+  card_holder    String
+  card_type      String   @default("debit")    // debit|credit|atm
+  card_status    String   @default("active")   // active|blocked|inactive|lost|replaced
+  is_blocked     Boolean  @default(false)
+  daily_limit    Decimal  @default(50000.00) @db.Decimal(18, 2)
+  mpin_hash      String?
+  credit_limit   Decimal? @db.Decimal(18, 2)
+  outstanding    Decimal  @default(0.00) @db.Decimal(18, 2)
+  account_id     String
+  account        Account  @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  issued_at      DateTime @default(now())
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@index([account_id])
+  @@index([card_status])
+}
+
+// ─── Loan ─────────────────────────────────────────────────────────────────────
+model Loan {
+  id                 String              @id @default(uuid())
+  loan_number        String              @unique @default(uuid())
+  amount             Decimal             @db.Decimal(18, 2)
+  approved_amount    Decimal?            @db.Decimal(18, 2)
+  disbursed_amount   Decimal?            @db.Decimal(18, 2)
+  duration_months    Int
+  rate               Decimal             @db.Decimal(5, 2)
+  loan_type          String              // personal|home|vehicle|education|business|gold
+  status             String              @default("pending")  // pending|under_review|approved|rejected|disbursed|closed
+  purpose            String?
+  collateral         String?
+  credit_score       Int?
+  approved_by        String?
+  disbursed_at       DateTime?
+  user_id            String
+  user               User                @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  repayments         LoanRepayment[]
+  created_at         DateTime            @default(now())
+  updated_at         DateTime            @updatedAt
+
+  @@index([user_id])
+  @@index([status])
+  @@index([loan_type])
+}
+
+model LoanRepayment {
+  id             String    @id @default(uuid())
+  loan_id        String
+  loan           Loan      @relation(fields: [loan_id], references: [id], onDelete: Cascade)
+  emi_amount     Decimal   @db.Decimal(18, 2)
+  principal      Decimal   @db.Decimal(18, 2)
+  interest       Decimal   @db.Decimal(18, 2)
+  due_date       DateTime
+  paid_date      DateTime?
+  status         String    @default("pending")  // pending|paid|overdue
+  created_at     DateTime  @default(now())
+
+  @@index([loan_id])
+  @@index([due_date])
+}
+
+// ─── Beneficiary ──────────────────────────────────────────────────────────────
+model Beneficiary {
+  id               String   @id @default(uuid())
+  name             String
+  account_number   String
+  bank_name        String?
+  ifsc_code        String?
+  nickname         String?
+  is_active        Boolean  @default(true)
+  user_id          String
+  user             User     @relation("UserBeneficiaries", fields: [user_id], references: [id], onDelete: Cascade)
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  @@index([user_id])
+}
+
+// ─── Bill ─────────────────────────────────────────────────────────────────────
+model Bill {
+  id             String    @id @default(uuid())
+  biller_name    String
+  biller_category String   @default("utility")  // utility|mobile|insurance|dth|broadband|credit_card
+  consumer_number String?
+  amount         Decimal   @db.Decimal(18, 2)
+  due_date       DateTime?
+  paid_at        DateTime?
+  status         String    @default("pending")  // pending|paid|overdue
+  account_id     String
+  account        Account   @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  created_at     DateTime  @default(now())
+
+  @@index([account_id])
+  @@index([status])
+}
+
+// ─── Scheduled Payment ────────────────────────────────────────────────────────
+model ScheduledPayment {
+  id              String   @id @default(uuid())
+  amount          Decimal  @db.Decimal(18, 2)
+  frequency       String   @default("monthly")  // daily|weekly|monthly
+  next_run        DateTime
+  is_active       Boolean  @default(true)
+  account_id      String
+  account         Account  @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  to_account_num  String
+  description     String?
+  created_at      DateTime @default(now())
+
+  @@index([account_id])
+  @@index([next_run])
+}
+
+// ─── Cheque Book Request ──────────────────────────────────────────────────────
+model ChequebookRequest {
+  id           String   @id @default(uuid())
+  account_id   String
+  account      Account  @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  leaves       Int      @default(25)    // 25|50|100
+  status       String   @default("pending")  // pending|processing|dispatched|delivered
+  address      String?
+  tracking_no  String?
+  requested_at DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  @@index([account_id])
+}
+
+// ─── Cheque Stop ──────────────────────────────────────────────────────────────
+model ChequeStop {
+  id            String   @id @default(uuid())
+  account_id    String
+  account       Account  @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  cheque_number String
+  reason        String?
+  status        String   @default("active")  // active|cancelled
+  created_at    DateTime @default(now())
+
+  @@index([account_id])
+}
+
+// ─── Cash Drawer ──────────────────────────────────────────────────────────────
+model CashDrawer {
+  id              String   @id @default(uuid())
+  teller_id       String
+  teller          User     @relation(fields: [teller_id], references: [id], onDelete: Cascade)
+  branch_id       String
+  branch          Branch   @relation(fields: [branch_id], references: [id], onDelete: Cascade)
+  opening_balance Decimal  @db.Decimal(18, 2)
+  closing_balance Decimal? @db.Decimal(18, 2)
+  denominations   String?  // JSON: {2000:x, 500:y, 200:z, 100:a, 50:b, 20:c, 10:d}
+  opened_at       DateTime @default(now())
+  closed_at       DateTime?
+  status          String   @default("open")  // open|closed
+
+  @@index([teller_id])
+  @@index([branch_id])
+  @@index([opened_at])
+}
+
+// ─── Support Ticket ───────────────────────────────────────────────────────────
+model SupportTicket {
+  id            String         @id @default(uuid())
+  subject       String
+  description   String?
+  priority      String         @default("medium")  // low|medium|high|urgent
+  status        String         @default("open")    // open|in_progress|resolved|closed
+  category      String         @default("general") // general|transaction|card|loan|account
+  user_id       String
+  user          User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  assigned_to   String?
+  resolved_at   DateTime?
+  created_at    DateTime       @default(now())
+  updated_at    DateTime       @updatedAt
+
+  @@index([user_id])
+  @@index([status])
+}
+
+// ─── Audit Log ────────────────────────────────────────────────────────────────
+model AuditLog {
+  id         String   @id @default(uuid())
+  timestamp  DateTime @default(now())
+  user_id    String?
+  user       User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  role       String
+  action     String
+  module     String   @default("system")
+  ip_address String   @default("127.0.0.1")
+  user_agent String?
+  status     String   @default("success")
+
+  @@index([timestamp])
+  @@index([user_id])
+  @@index([module])
+}
+
+// ─── Notification ─────────────────────────────────────────────────────────────
+model Notification {
+  id         String   @id @default(uuid())
+  title      String
+  message    String
+  type       String   @default("info")  // info|success|warning|alert
+  is_read    Boolean  @default(false)
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at DateTime @default(now())
+
+  @@index([user_id])
+  @@index([is_read])
+}
+
+// ─── Announcement ─────────────────────────────────────────────────────────────
+model Announcement {
+  id           String   @id @default(uuid())
+  title        String
+  content      String
+  target_roles String   @default("all")  // all|customer|employee|manager
+  is_active    Boolean  @default(true)
+  published_at DateTime @default(now())
+  expires_at   DateTime?
+  created_by   String
+  author       User     @relation(fields: [created_by], references: [id], onDelete: Cascade)
+  created_at   DateTime @default(now())
+
+  @@index([is_active])
+  @@index([target_roles])
+}

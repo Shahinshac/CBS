@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: bankmanagement-api
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r backend/requirements.txt"
+    startCommand: "cd backend && gunicorn --bind 0.0.0.0:$PORT run:app"
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: FLASK_APP
+        value: run.py
+      - key: MONGODB_URI
+        sync: false
+      - key: CORS_ORIGINS
+        value: https://26-07bank.vercel.app,http://localhost:3000
+      - key: SECRET_KEY
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: DEBUG
+        value: "False"
+      - key: PYTHON_VERSION
+        value: "3.11"
