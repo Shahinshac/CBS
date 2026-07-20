@@ -10,13 +10,23 @@ async function bootstrap() {
   app.use(helmet());
 
   // Enable CORS
+  const allowedOrigins = process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(',').map((origin) => origin.trim())
+    : [
+        'https://26-07bank.vercel.app',
+        'https://shaahn.vercel.app',
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+      ];
+
+  // Include the user's specific domain if not already present
+  if (!allowedOrigins.includes('https://shaahn.vercel.app')) {
+    allowedOrigins.push('https://shaahn.vercel.app');
+  }
+
   app.enableCors({
-    origin: [
-      'https://26-07bank.vercel.app',
-      'http://localhost:3000',
-      'http://localhost:5173',
-      'http://127.0.0.1:5173',
-    ],
+    origin: allowedOrigins,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
