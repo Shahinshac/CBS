@@ -215,14 +215,19 @@ export const Login = ({ defaultPersona = 'customer' }: { defaultPersona?: 'custo
             </button>
           </form>
 
-          <div className="mt-8 text-center">
-            <p className="text-sm text-slate-600">
-              First-time user?{' '}
-              <Link className="text-blue-600 font-bold hover:underline" to="/register">
-                Register here
-              </Link>
-            </p>
-          </div>
+          {persona !== 'admin' && (
+            <div className="mt-8 text-center">
+              <p className="text-sm text-slate-600">
+                {persona === 'employee' ? 'First-time employee? ' : 'First-time user? '}
+                <Link 
+                  className="text-blue-600 font-bold hover:underline" 
+                  to={persona === 'employee' ? '/register?type=employee' : '/register?type=customer'}
+                >
+                  Register here
+                </Link>
+              </p>
+            </div>
+          )}
 
           {/* Security Assurance */}
           <div className="mt-12 pt-8 border-t border-slate-200 flex flex-col items-center">

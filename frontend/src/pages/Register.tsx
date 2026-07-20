@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Landmark, ArrowRight, CheckCircle2, ShieldAlert, Loader2, CreditCard, Smartphone, Calendar, User, Lock } from 'lucide-react';
 import { authAPI } from '../services/api';
 
 export const Register = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const type = searchParams.get('type') || 'customer';
   const [step, setStep] = useState<1 | 2>(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,9 +72,9 @@ export const Register = () => {
         username: username.trim(),
         password,
       });
-      setSuccess('Net Banking registration completed successfully! Redirecting to login...');
+      setSuccess(`${type === 'employee' ? 'Employee' : 'Net Banking'} registration completed successfully! Redirecting to login...`);
       setTimeout(() => {
-        navigate('/login/customer');
+        navigate(type === 'employee' ? '/login/employee' : '/login/customer');
       }, 3000);
     } catch (err: any) {
       setError(err.response?.data?.message || 'Finalization failed. Please try again.');
@@ -100,10 +102,12 @@ export const Register = () => {
           
           <div className="space-y-4">
             <h1 className="text-3xl lg:text-4xl font-extrabold leading-tight tracking-tight">
-              Activate Online Banking Securely
+              {type === 'employee' ? 'Activate Staff Workspace Securely' : 'Activate Online Banking Securely'}
             </h1>
             <p className="text-slate-400 text-sm leading-relaxed">
-              Unlock access to your funds, deposits, card details, transfer settings, and statements in under two minutes. Just verify your customer information to get started.
+              {type === 'employee'
+                ? 'Unlock access to your teller workspace, customer management, cash drawer, and staff dashboard. Just verify your employee credentials to get started.'
+                : 'Unlock access to your funds, deposits, card details, transfer settings, and statements in under two minutes. Just verify your customer information to get started.'}
             </p>
           </div>
 
@@ -111,15 +115,21 @@ export const Register = () => {
             <div className="flex gap-4">
               <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-blue-400 shrink-0">1</div>
               <div>
-                <h3 className="font-semibold text-slate-200 text-sm">Validate Account</h3>
-                <p className="text-slate-500 text-xs mt-1">Cross-check with your registered phone number and details on file.</p>
+                <h3 className="font-semibold text-slate-200 text-sm">
+                  {type === 'employee' ? 'Validate Employee ID' : 'Validate Account'}
+                </h3>
+                <p className="text-slate-500 text-xs mt-1">
+                  {type === 'employee'
+                    ? 'Cross-check with your registered staff phone number and details on file.'
+                    : 'Cross-check with your registered phone number and details on file.'}
+                </p>
               </div>
             </div>
             <div className="flex gap-4">
               <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-blue-400 shrink-0">2</div>
               <div>
                 <h3 className="font-semibold text-slate-200 text-sm">Create Username & Password</h3>
-                <p className="text-slate-500 text-xs mt-1">Setup secure passwords to safeguard access to your online banking portal.</p>
+                <p className="text-slate-500 text-xs mt-1">Setup secure passwords to safeguard access to your portal.</p>
               </div>
             </div>
           </div>
@@ -130,13 +140,17 @@ export const Register = () => {
       <section className="w-full md:w-1/2 lg:w-2/5 flex items-center justify-center p-6 sm:p-12 lg:p-16 bg-white overflow-y-auto">
         <div className="w-full max-w-md space-y-8 py-6">
           <div className="space-y-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-blue-600 block">Net Banking Portal</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-blue-600 block">
+              {type === 'employee' ? 'Staff Portal' : 'Net Banking Portal'}
+            </span>
             <h2 className="text-2xl lg:text-3xl font-extrabold text-slate-900 tracking-tight">
-              {step === 1 ? 'Register Net Banking' : 'Create Credentials'}
+              {step === 1 
+                ? (type === 'employee' ? 'Register Staff Portal' : 'Register Net Banking') 
+                : 'Create Credentials'}
             </h2>
             <p className="text-slate-500 text-sm">
               {step === 1 
-                ? 'Enter your bank registered account parameters to verify identity.' 
+                ? (type === 'employee' ? 'Enter your bank registered employee credentials to verify identity.' : 'Enter your bank registered account parameters to verify identity.') 
                 : 'Choose a unique username and strong password.'}
             </p>
           </div>
@@ -157,19 +171,19 @@ export const Register = () => {
 
           {step === 1 ? (
             <form onSubmit={handleStep1Submit} className="space-y-5">
-              <div>
+               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2" htmlFor="accountOrCard">
-                  Account Number / Debit Card Number
+                  {type === 'employee' ? 'Employee ID / Username / Email' : 'Account Number / Debit Card Number'}
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                    <CreditCard className="w-5 h-5" />
+                    {type === 'employee' ? <User className="w-5 h-5" /> : <CreditCard className="w-5 h-5" />}
                   </span>
                   <input
                     id="accountOrCard"
                     type="text"
                     required
-                    placeholder="Enter 10-digit Account or 16-digit Card Number"
+                    placeholder={type === 'employee' ? 'Enter Employee ID, username or email' : 'Enter 10-digit Account or 16-digit Card Number'}
                     value={accountOrCard}
                     onChange={(e) => setAccountOrCard(e.target.value)}
                     className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-lg text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
@@ -302,7 +316,7 @@ export const Register = () => {
                   <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
                   <>
-                    Activate Net Banking
+                    {type === 'employee' ? 'Activate Staff Account' : 'Activate Net Banking'}
                     <CheckCircle2 className="w-4 h-4" />
                   </>
                 )}
@@ -313,7 +327,10 @@ export const Register = () => {
           <div className="mt-8 text-center border-t border-slate-100 pt-6">
             <p className="text-sm text-slate-600">
               Already registered?{' '}
-              <Link className="text-blue-600 font-bold hover:underline" to="/login/customer">
+              <Link 
+                className="text-blue-600 font-bold hover:underline" 
+                to={type === 'employee' ? '/login/employee' : '/login/customer'}
+              >
                 Secure Login
               </Link>
             </p>

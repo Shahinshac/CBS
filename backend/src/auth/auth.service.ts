@@ -129,8 +129,21 @@ export class AuthService {
       }
     }
 
+    // 3. Fallback: Find employee/user directly by username, email, or ID
     if (!user) {
-      throw new BadRequestException('No account or debit card matches the provided number.');
+      user = await this.prisma.user.findFirst({
+        where: {
+          OR: [
+            { id: data.account_or_card },
+            { username: data.account_or_card },
+            { email: data.account_or_card },
+          ],
+        },
+      });
+    }
+
+    if (!user) {
+      throw new BadRequestException('No account, debit card, or employee ID matches the provided identifier.');
     }
 
     // 3. Verify phone number
