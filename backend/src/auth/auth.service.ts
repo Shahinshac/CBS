@@ -57,8 +57,8 @@ export class AuthService {
     let user = await this.prisma.user.findFirst({
       where: {
         OR: [
-          { username: data.username },
-          { email: data.username },
+          { username: { equals: data.username, mode: 'insensitive' } },
+          { email: { equals: data.username, mode: 'insensitive' } },
         ],
         is_deleted: false,
       },
