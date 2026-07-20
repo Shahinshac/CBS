@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { Landmark, ArrowRight, CheckCircle2, ShieldAlert, Loader2, CreditCard, Smartphone, Calendar, User, Lock } from 'lucide-react';
+import { Landmark, ArrowRight, CheckCircle2, ShieldAlert, Loader2, CreditCard, Smartphone, User, Lock } from 'lucide-react';
 import { authAPI } from '../services/api';
 
 export const Register = () => {
@@ -15,7 +15,6 @@ export const Register = () => {
   // Form State - Step 1
   const [accountOrCard, setAccountOrCard] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [dob, setDob] = useState('');
 
   // Form State - Step 2
   const [userId, setUserId] = useState('');
@@ -36,7 +35,6 @@ export const Register = () => {
       const response = await authAPI.checkRegister({
         account_or_card: accountOrCard.trim(),
         phone_number: phoneNumber.trim(),
-        date_of_birth: dob,
       });
       setUserId(response.data.user_id);
       setStep(2);
@@ -211,24 +209,7 @@ export const Register = () => {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2" htmlFor="dob">
-                  Date of Birth
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                    <Calendar className="w-5 h-5" />
-                  </span>
-                  <input
-                    id="dob"
-                    type="date"
-                    required
-                    value={dob}
-                    onChange={(e) => setDob(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-lg text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                  />
-                </div>
-              </div>
+
 
               <button
                 type="submit"
