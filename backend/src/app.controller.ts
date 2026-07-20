@@ -1705,16 +1705,20 @@ export class AppController {
 
   @Patch('admin/employees/:id')
   async updateEmployee(@Param('id') id: string, @Body() body: any) {
-    const { is_active, role, branch_id, updated_by } = body;
+    const { is_active, role, branch_id, updated_by, first_name, last_name, email, phone_number } = body;
     const updates: any = {};
     if (typeof is_active === 'boolean') updates.is_active = is_active;
     if (role) updates.role = role;
     if (branch_id !== undefined) updates.branch_id = branch_id;
+    if (first_name) updates.first_name = first_name;
+    if (last_name) updates.last_name = last_name;
+    if (email) updates.email = email;
+    if (phone_number !== undefined) updates.phone_number = phone_number;
 
     const employee = await this.prisma.user.update({
       where: { id },
       data: updates,
-      select: { id: true, first_name: true, last_name: true, role: true, is_active: true, branch_id: true },
+      select: { id: true, first_name: true, last_name: true, email: true, phone_number: true, role: true, is_active: true, branch_id: true },
     });
 
     await audit(this.prisma, {

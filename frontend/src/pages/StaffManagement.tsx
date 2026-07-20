@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, UserPlus, Building2, RefreshCw, Loader2, CheckCircle2, AlertCircle, Trash2, ShieldCheck, ShieldX } from 'lucide-react';
+import { Users, UserPlus, Building2, RefreshCw, Loader2, CheckCircle2, AlertCircle, Trash2, ShieldCheck, ShieldX, Pencil, X } from 'lucide-react';
 import { employeeAPI } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 
@@ -27,6 +27,15 @@ export const StaffManagement = () => {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const [editingEmp, setEditingEmp] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState({
+    first_name: '',
+    last_name: '',
+    email: '',
+    phone_number: '',
+    role: 'teller',
+  });
 
   const [form, setForm] = useState({
     first_name: '',
@@ -96,6 +105,47 @@ export const StaffManagement = () => {
       setStatus({ type: 'error', message: 'Failed to remove employee.' });
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  const handleEditClick = (emp: any) => {
+    setEditingEmp(emp);
+    setEditForm({
+      first_name: emp.first_name || '',
+      last_name: emp.last_name || '',
+      email: emp.email || '',
+      phone_number: emp.phone_number || '',
+      role: emp.role || 'teller',
+    });
+  };
+
+  const handleUpdateEmployee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingEmp) return;
+    setFormLoading(true);
+    setStatus(null);
+    try {
+      await employeeAPI.update(editingEmp.id, { ...editForm, updated_by: user?.id });
+      
+      if (editingEmp.id === user?.id) {
+        useAuthStore.setState({
+          user: {
+            ...user,
+            first_name: editForm.first_name,
+            last_name: editForm.last_name,
+            email: editForm.email,
+            role: editForm.role,
+          } as any
+        });
+      }
+      
+      setStatus({ type: 'success', message: `Details of ${editForm.first_name} ${editForm.last_name} updated successfully.` });
+      setEditingEmp(null);
+      fetchEmployees();
+    } catch (err: any) {
+      setStatus({ type: 'error', message: err.response?.data?.message || 'Failed to update employee.' });
+    } finally {
+      setFormLoading(false);
     }
   };
 
@@ -207,6 +257,14 @@ export const StaffManagement = () => {
                         </td>
                         <td className="py-4 px-4 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => handleEditClick(emp)}
+                              disabled={actionLoading === emp.id}
+                              className="p-1.5 rounded-md border bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-50"
+                              title="Edit Details"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
                             <button
                               onClick={() => handleToggleStatus(emp)}
                               disabled={actionLoading === emp.id}
@@ -359,6 +417,98 @@ export const StaffManagement = () => {
           </form>
         </div>
       </div>
+
+      {/* Edit Employee Modal */}
+      {editingEmp && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="font-bold text-slate-900">Edit Employee Details</h3>
+              <button
+                onClick={() => setEditingEmp(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleUpdateEmployee} className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">First Name *</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-900 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                    value={editForm.first_name}
+                    onChange={e => setEditForm({ ...editForm, first_name: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Last Name *</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-900 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                    value={editForm.last_name}
+                    onChange={e => setEditForm({ ...editForm, last_name: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Email *</label>
+                <input
+                  type="email"
+                  required
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-900 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  value={editForm.email}
+                  onChange={e => setEditForm({ ...editForm, email: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Phone Number</label>
+                <input
+                  type="tel"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-900 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  value={editForm.phone_number}
+                  onChange={e => setEditForm({ ...editForm, phone_number: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Role *</label>
+                <select
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-900 text-sm focus:ring-2 focus:ring-blue-500 bg-white outline-none"
+                  value={editForm.role}
+                  onChange={e => setEditForm({ ...editForm, role: e.target.value })}
+                >
+                  <option value="teller">Teller / Cashier</option>
+                  <option value="loan_officer">Loan Officer</option>
+                  <option value="customer_support">Customer Support</option>
+                  <option value="auditor">Auditor</option>
+                  <option value="branch_manager">Branch Manager</option>
+                  <option value="super_admin">Super Admin</option>
+                </select>
+              </div>
+              <div className="flex gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingEmp(null)}
+                  className="flex-1 px-4 py-2 border border-slate-200 text-slate-700 font-semibold rounded-lg text-sm hover:bg-slate-50 transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={formLoading}
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-75 text-white font-semibold rounded-lg text-sm transition-all cursor-pointer flex items-center justify-center"
+                >
+                  {formLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
