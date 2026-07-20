@@ -338,7 +338,7 @@ export const TellerWorkspace = () => {
                   {c.first_name?.[0]}{c.last_name?.[0]}
                 </div>
                 <div>
-                  <p className="font-semibold text-slate-900">{c.first_name} {c.last_name}</p>
+                  <p className="font-semibold text-slate-900">{c.first_name} {c.last_name} <span className="text-xs text-slate-500 font-mono">(@{c.username})</span></p>
                   <p className="text-xs text-slate-500">{c.email} · {c.phone_number}</p>
                 </div>
               </div>
@@ -371,6 +371,7 @@ export const TellerWorkspace = () => {
                 </div>
               </div>
               <div className="space-y-2 text-sm text-slate-600">
+                <div className="flex items-center gap-2"><User className="w-4 h-4 text-slate-400" /><span>Username: <span className="font-mono font-bold text-slate-800">{selectedCustomer.username}</span></span></div>
                 <div className="flex items-center gap-2"><Mail className="w-4 h-4 text-slate-400" />{selectedCustomer.email}</div>
                 <div className="flex items-center gap-2"><Phone className="w-4 h-4 text-slate-400" />{selectedCustomer.phone_number || '—'}</div>
                 <div className="flex items-center gap-2">
