@@ -26,12 +26,14 @@ const ALL_STAFF_ROLES = [
   'customer_support', 'auditor',
 ];
 
-function App() {
-  const { checkAuth, user } = useAuthStore();
-
-  useEffect(() => { checkAuth(); }, [checkAuth]);
-
-  // Smart default redirect based on role
+const HomeRedirect = () => {
+  const { user } = useAuthStore();
+  const token = localStorage.getItem('access_token');
+  
+  if (token && !user) {
+    return <div className="flex h-screen items-center justify-center">Loading...</div>;
+  }
+  
   const getDefaultPath = () => {
     if (!user) return '/login';
     switch (user.role) {
@@ -45,6 +47,14 @@ function App() {
       default: return '/teller-workspace';
     }
   };
+
+  return <Navigate to={getDefaultPath()} replace />;
+};
+
+function App() {
+  const { checkAuth } = useAuthStore();
+
+  useEffect(() => { checkAuth(); }, [checkAuth]);
 
   return (
     <BrowserRouter>
@@ -61,7 +71,7 @@ function App() {
           <Route element={<Layout />}>
 
             {/* Smart home redirect */}
-            <Route path="/" element={<Navigate to={getDefaultPath()} replace />} />
+            <Route path="/" element={<HomeRedirect />} />
 
             {/* ── Customer NetBanking ── */}
             <Route element={<ProtectedRoute allowedRoles={['customer']} />}>

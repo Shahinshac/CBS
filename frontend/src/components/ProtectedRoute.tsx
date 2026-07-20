@@ -4,7 +4,11 @@ import { useAuthStore } from '../store/authStore';
 export const ProtectedRoute = ({ allowedRoles }: { allowedRoles?: string[] }) => {
   const { isAuthenticated, user, loading } = useAuthStore();
 
-  if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
+  const token = localStorage.getItem('access_token');
+
+  if (loading || (token && !user)) {
+    return <div className="flex h-screen items-center justify-center">Loading...</div>;
+  }
 
   if (!isAuthenticated || !user) {
     return <Navigate to="/login" replace />;
