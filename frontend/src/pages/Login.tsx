@@ -66,7 +66,7 @@ export const Login = ({ defaultPersona = 'customer' }: { defaultPersona?: 'custo
   const getLabelAndPlaceholder = () => {
     switch (persona) {
       case 'customer':
-        return { label: 'Customer Login ID', placeholder: 'Enter your Customer ID' };
+        return { label: 'Customer Username', placeholder: 'Enter your username or email' };
       case 'employee':
         return { label: 'Staff Username', placeholder: 'Enter your username or email' };
       case 'admin':

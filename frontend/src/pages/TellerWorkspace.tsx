@@ -5,7 +5,7 @@ import {
   BookOpen, StopCircle, Banknote, Eye, RotateCcw, ShieldCheck
 } from 'lucide-react';
 import {
-  searchAPI, transactionAPI, cashDrawerAPI, cardAPI, chequeAPI
+  searchAPI, transactionAPI, cashDrawerAPI, cardAPI, chequeAPI, accountAPI
 } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 
@@ -214,6 +214,17 @@ export const TellerWorkspace = () => {
       } else if (cardAction === 'set_limit') {
         res = await cardAPI.setLimit(cardId, parseFloat(newLimit), user?.id);
         setTxStatus({ type: 'success', message: `Daily limit updated to ₹${parseFloat(newLimit).toLocaleString('en-IN')}.` });
+      }
+
+      // Refresh account details so cards list updates
+      const refreshedAcc = await accountAPI.getById(selectedAccount.id);
+      const updatedAccountData = refreshedAcc.data.account;
+      setSelectedAccount(updatedAccountData);
+      if (selectedCustomer) {
+        setSelectedCustomer({
+          ...selectedCustomer,
+          accounts: selectedCustomer.accounts.map((a: any) => a.id === selectedAccount.id ? updatedAccountData : a)
+        });
       }
     } catch (err: any) {
       setTxStatus({ type: 'error', message: err.response?.data?.message || 'Card action failed.' });
