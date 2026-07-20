@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Req, UseGuards, UnauthorizedException, Get, Request } from '@nestjs/common';
+import { Controller, Post, Body, Req, UseGuards, Param, UnauthorizedException, Get, Request } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
@@ -79,5 +79,17 @@ export class AuthController {
   @Post('register-finalize')
   async finalizeRegister(@Body() body: any) {
     return this.authService.finalizeRegister(body);
+  }
+
+  @Get('check-username/:username')
+  async checkUsername(@Param('username') username: string) {
+    const prisma = (this.authService as any).prisma;
+    // Perform a case-insensitive unique search for username
+    const user = await prisma.user.findFirst({
+      where: {
+        username: { equals: username, mode: 'insensitive' }
+      }
+    });
+    return { available: !user };
   }
 }

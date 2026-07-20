@@ -83,6 +83,7 @@ export const authAPI = {
   checkRegister: (data: { account_or_card: string; phone_number: string; date_of_birth?: string }) =>
     api.post('/auth/register-check', data),
   finalizeRegister: (data: any) => api.post('/auth/register-finalize', data),
+  checkUsername: (username: string) => api.get(`/auth/check-username/${username}`),
 };
 
 // ─── Universal Search ──────────────────────────────────────────────────────

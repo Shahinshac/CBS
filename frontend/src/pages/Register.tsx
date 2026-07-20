@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Landmark, ArrowRight, CheckCircle2, ShieldAlert, Loader2, CreditCard, Smartphone, User, Lock } from 'lucide-react';
 import { authAPI } from '../services/api';
@@ -21,6 +21,30 @@ export const Register = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
+  const [checkingUsername, setCheckingUsername] = useState(false);
+
+  useEffect(() => {
+    if (username.trim().length < 3) {
+      setUsernameAvailable(null);
+      return;
+    }
+    
+    const delayDebounceFn = setTimeout(async () => {
+      setCheckingUsername(true);
+      try {
+        const res = await authAPI.checkUsername(username.trim());
+        setUsernameAvailable(res.data.available);
+      } catch {
+        setUsernameAvailable(null);
+      } finally {
+        setCheckingUsername(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [username]);
 
   const handleStep1Submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,6 +74,11 @@ export const Register = () => {
     setError(null);
     if (!username.trim() || !password || !confirmPassword) {
       setError('Please fill in all required fields.');
+      return;
+    }
+
+    if (usernameAvailable === false) {
+      setError('Username is already taken. Please enter another username.');
       return;
     }
 
@@ -246,6 +275,17 @@ export const Register = () => {
                     className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-lg text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
                   />
                 </div>
+                {checkingUsername && (
+                  <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Checking availability...
+                  </p>
+                )}
+                {!checkingUsername && usernameAvailable === true && (
+                  <p className="text-xs text-emerald-600 mt-1 font-medium">✓ Username is available</p>
+                )}
+                {!checkingUsername && usernameAvailable === false && (
+                  <p className="text-xs text-red-600 mt-1 font-medium">✗ Username is already taken, please enter another username</p>
+                )}
               </div>
 
               <div>
