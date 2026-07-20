@@ -4,7 +4,7 @@ import { useAuthStore } from '../store/authStore';
 import {
   Building2, LogOut, Users, TerminalSquare, BarChart3, UserPlus,
   Landmark, ShieldAlert, HelpCircle, LayoutDashboard, GitBranch,
-  Activity
+  Activity, RefreshCw
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -147,6 +147,14 @@ export const Layout = () => {
             <span className="text-sm text-slate-600 font-medium">System Online</span>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => window.location.reload()}
+              className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-all cursor-pointer"
+              title="Refresh Page"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Refresh</span>
+            </button>
             <span className="text-xs text-slate-500">{new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
           </div>
         </header>
