@@ -16,6 +16,7 @@ import { Response } from 'express';
 import { PrismaService } from './prisma/prisma.service';
 import { AuthService } from './auth/auth.service';
 import * as PDFDocument from 'pdfkit';
+import * as bcrypt from 'bcryptjs';
 
 // ─── Role constants ────────────────────────────────────────────────────────────
 const Role = {
@@ -1715,7 +1716,7 @@ export class AppController {
 
   @Patch('admin/employees/:id')
   async updateEmployee(@Param('id') id: string, @Body() body: any) {
-    const { is_active, role, branch_id, updated_by, first_name, last_name, email, phone_number } = body;
+    const { is_active, role, branch_id, updated_by, first_name, last_name, email, phone_number, password } = body;
     const updates: any = {};
     if (typeof is_active === 'boolean') updates.is_active = is_active;
     if (role) updates.role = role;
@@ -1724,6 +1725,11 @@ export class AppController {
     if (last_name) updates.last_name = last_name;
     if (email) updates.email = email;
     if (phone_number !== undefined) updates.phone_number = phone_number;
+
+    if (password) {
+      const salt = await bcrypt.genSalt(10);
+      updates.password_hash = await bcrypt.hash(password, salt);
+    }
 
     const employee = await this.prisma.user.update({
       where: { id },

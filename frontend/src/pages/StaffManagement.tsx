@@ -35,6 +35,7 @@ export const StaffManagement = () => {
     email: '',
     phone_number: '',
     role: 'teller',
+    password: '',
   });
 
   const [form, setForm] = useState({
@@ -116,6 +117,7 @@ export const StaffManagement = () => {
       email: emp.email || '',
       phone_number: emp.phone_number || '',
       role: emp.role || 'teller',
+      password: '',
     });
   };
 
@@ -487,6 +489,17 @@ export const StaffManagement = () => {
                   <option value="branch_manager">Branch Manager</option>
                   <option value="super_admin">Super Admin</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Reset Password</label>
+                <input
+                  type="text"
+                  placeholder="Enter new password (optional)"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-900 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  value={editForm.password}
+                  onChange={e => setEditForm({ ...editForm, password: e.target.value })}
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Leave blank to keep current password.</p>
               </div>
               <div className="flex gap-3 pt-4 border-t border-slate-100">
                 <button
