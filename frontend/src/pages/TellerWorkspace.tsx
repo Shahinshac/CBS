@@ -125,11 +125,25 @@ export const TellerWorkspace = () => {
       if (activeTab === 'deposit') {
         res = await transactionAPI.deposit(payload);
         const newBal = Number(selectedAccount.balance) + parseFloat(amount);
-        setSelectedAccount({ ...selectedAccount, balance: newBal });
+        const updated = { ...selectedAccount, balance: newBal };
+        setSelectedAccount(updated);
+        if (selectedCustomer) {
+          setSelectedCustomer({
+            ...selectedCustomer,
+            accounts: selectedCustomer.accounts.map((a: any) => a.id === selectedAccount.id ? updated : a)
+          });
+        }
       } else if (activeTab === 'withdraw') {
         res = await transactionAPI.withdraw(payload);
         const newBal = Number(selectedAccount.balance) - parseFloat(amount);
-        setSelectedAccount({ ...selectedAccount, balance: newBal });
+        const updated = { ...selectedAccount, balance: newBal };
+        setSelectedAccount(updated);
+        if (selectedCustomer) {
+          setSelectedCustomer({
+            ...selectedCustomer,
+            accounts: selectedCustomer.accounts.map((a: any) => a.id === selectedAccount.id ? updated : a)
+          });
+        }
       } else if (activeTab === 'transfer') {
         res = await transactionAPI.transfer({
           from_account_id: selectedAccount.id,
@@ -140,7 +154,14 @@ export const TellerWorkspace = () => {
           channel: 'branch',
         });
         const newBal = Number(selectedAccount.balance) - parseFloat(amount);
-        setSelectedAccount({ ...selectedAccount, balance: newBal });
+        const updated = { ...selectedAccount, balance: newBal };
+        setSelectedAccount(updated);
+        if (selectedCustomer) {
+          setSelectedCustomer({
+            ...selectedCustomer,
+            accounts: selectedCustomer.accounts.map((a: any) => a.id === selectedAccount.id ? updated : a)
+          });
+        }
       }
 
       const tx = res?.data?.transaction;

@@ -122,8 +122,8 @@ export const Login = ({ defaultPersona = 'customer' }: { defaultPersona?: 'custo
       </section>
 
       {/* Right Side: Login Form */}
-      <section className="w-full md:w-1/2 lg:w-2/5 flex flex-col justify-center items-center bg-white p-6 md:p-12 lg:p-20 relative border-l border-slate-200">
-        <div className="w-full max-w-md">
+      <section className="w-full md:w-1/2 lg:w-2/5 flex flex-col justify-between items-center bg-white p-6 md:p-12 lg:p-16 border-l border-slate-200 min-h-screen">
+        <div className="w-full max-w-md my-auto py-8">
           <header className="mb-8">
             <div className="md:hidden mb-6 flex items-center gap-2">
               <Building2 className="h-8 w-8 text-blue-600" />
@@ -242,7 +242,7 @@ export const Login = ({ defaultPersona = 'customer' }: { defaultPersona?: 'custo
         </div>
 
         {/* Footer Links */}
-        <footer className="absolute bottom-8 left-0 w-full flex justify-center gap-6 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+        <footer className="w-full flex justify-center gap-6 text-[10px] font-bold text-slate-400 uppercase tracking-wider py-4 mt-auto">
           <a className="hover:text-slate-600" href="#">Privacy Policy</a>
           <a className="hover:text-slate-600" href="#">Terms of Service</a>
           <a className="hover:text-slate-600" href="#">Contact Security</a>
