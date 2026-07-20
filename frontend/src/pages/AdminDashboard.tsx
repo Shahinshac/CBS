@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Users, Building2, CreditCard, TrendingUp, AlertCircle,
-  ArrowUpRight, ArrowDownRight, Activity, DollarSign, Shield,
+  ArrowUpRight, ArrowDownRight, Activity, IndianRupee, Shield,
   CheckCircle2, Clock, Bell, Loader2, RefreshCcw,
   Banknote, UserCheck
 } from 'lucide-react';
@@ -99,7 +99,7 @@ export const AdminDashboard = () => {
     {
       label: 'Assets Under Mgmt',
       value: fmt(stats?.total_deposits || 0),
-      icon: DollarSign,
+      icon: IndianRupee,
       color: 'bg-emerald-600',
       change: 'Total deposits',
       positive: true,

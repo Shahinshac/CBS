@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { accountAPI, transactionAPI, cardAPI, loanAPI, notificationAPI, beneficiaryAPI, billAPI } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import {
-  DollarSign, CreditCard, Send, BookOpen, Bell, TrendingUp,
+  IndianRupee, CreditCard, Send, BookOpen, Bell, TrendingUp,
   Loader2, CheckCircle2, AlertCircle, Eye, EyeOff, History,
   Plus, Users, Receipt, FileDown, Trash2, ArrowUpRight, ArrowDownLeft
 } from 'lucide-react';
@@ -227,7 +227,7 @@ export const NetBanking = () => {
     .reduce((sum, a) => sum + parseFloat(a.balance || 0), 0);
 
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: DollarSign },
+    { id: 'dashboard', label: 'Dashboard', icon: IndianRupee },
     { id: 'transfer', label: 'Transfer', icon: Send },
     { id: 'beneficiaries', label: 'Beneficiaries', icon: Users, onLoad: fetchBeneficiaries },
     { id: 'bills', label: 'Bill Pay', icon: Receipt, onLoad: fetchBills },
@@ -274,7 +274,7 @@ export const NetBanking = () => {
           </div>
         </div>
         <div className="absolute right-0 bottom-0 opacity-5 transform translate-x-10 translate-y-10 scale-150 pointer-events-none">
-          <DollarSign className="w-64 h-64" />
+          <IndianRupee className="w-64 h-64" />
         </div>
       </div>
 
@@ -337,7 +337,7 @@ export const NetBanking = () => {
           ))}
           {accounts.length === 0 && (
             <div className="col-span-3 text-center py-12 text-slate-400">
-              <DollarSign className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <IndianRupee className="w-12 h-12 mx-auto mb-3 opacity-30" />
               <p>No accounts found. Visit your branch to open an account.</p>
             </div>
           )}

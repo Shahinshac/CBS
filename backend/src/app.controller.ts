@@ -216,20 +216,30 @@ export class AppController {
 
   @Patch('branches/:id')
   async updateBranch(@Param('id') id: string, @Body() body: any) {
-    const { name, address, city, phone, email, is_active, manager_id, updated_by } = body;
+    const { name, code, address, city, phone, email, is_active, manager_id, updated_by } = body;
+    const updates: any = {};
+    if (name) updates.name = name;
+    if (address !== undefined) updates.address = address;
+    if (city) updates.city = city;
+    if (phone !== undefined) updates.phone = phone;
+    if (email !== undefined) updates.email = email;
+    if (typeof is_active === 'boolean') updates.is_active = is_active;
+    if (manager_id !== undefined) updates.manager_id = manager_id;
+
+    if (code) {
+      const upperCode = code.toUpperCase();
+      const existing = await this.prisma.branch.findUnique({ where: { code: upperCode } });
+      if (existing && existing.id !== id) {
+        throw new BadRequestException('Branch code already exists');
+      }
+      updates.code = upperCode;
+    }
+
     const branch = await this.prisma.branch.update({
       where: { id },
-      data: {
-        ...(name && { name }),
-        ...(address !== undefined && { address }),
-        ...(city && { city }),
-        ...(phone !== undefined && { phone }),
-        ...(email !== undefined && { email }),
-        ...(typeof is_active === 'boolean' && { is_active }),
-        ...(manager_id !== undefined && { manager_id }),
-      },
+      data: updates,
     });
-    await audit(this.prisma, { user_id: updated_by, role: 'super_admin', action: `Branch updated: ${branch.name}`, module: 'branches' });
+    await audit(this.prisma, { user_id: updated_by, role: 'super_admin', action: `Branch updated: ${branch.name} (Code: ${branch.code})`, module: 'branches' });
     return { message: 'Branch updated.', branch };
   }
 

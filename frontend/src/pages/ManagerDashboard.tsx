@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Users, CheckCircle, Activity, Loader2, Landmark,
-  ArrowUpDown, RefreshCw, DollarSign, FileCheck, Clock
+  ArrowUpDown, RefreshCw, IndianRupee, FileCheck, Clock
 } from 'lucide-react';
 import { adminAPI, transactionAPI, loanAPI } from '../services/api';
 import { useAuthStore } from '../store/authStore';
@@ -92,7 +92,7 @@ export const ManagerDashboard = () => {
               { label: 'Total Customers', value: customers.length, icon: Users, color: 'blue' },
               { label: 'Active Accounts', value: activeCustomers, icon: CheckCircle, color: 'emerald' },
               { label: 'Pending Loans', value: pendingLoans.length, icon: Clock, color: 'amber' },
-              { label: 'Total Deposits', value: `₹${(totalBalance / 1000).toFixed(0)}K`, icon: DollarSign, color: 'purple' },
+              { label: 'Total Deposits', value: `₹${(totalBalance / 1000).toFixed(0)}K`, icon: IndianRupee, color: 'purple' },
             ].map(card => (
               <div key={card.label} className="premium-card p-5">
                 <div className="flex items-center justify-between mb-3">

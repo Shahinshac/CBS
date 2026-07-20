@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  FileText, BarChart3, TrendingUp, DollarSign, Shield,
+  FileText, BarChart3, TrendingUp, IndianRupee, Shield,
   Printer, Calendar, Filter, Loader2, RefreshCcw
 } from 'lucide-react';
 import { reportAPI, branchAPI } from '../services/api';
@@ -15,7 +15,7 @@ const REPORT_TYPES = [
   { id: 'daily' as ReportType, label: 'Daily Transactions', icon: FileText, color: 'text-blue-600' },
   { id: 'monthly' as ReportType, label: 'Monthly Summary', icon: BarChart3, color: 'text-indigo-600' },
   { id: 'loans' as ReportType, label: 'Loan Report', icon: TrendingUp, color: 'text-emerald-600' },
-  { id: 'cash' as ReportType, label: 'Cash & Balances', icon: DollarSign, color: 'text-amber-600' },
+  { id: 'cash' as ReportType, label: 'Cash & Balances', icon: IndianRupee, color: 'text-amber-600' },
   { id: 'audit' as ReportType, label: 'Audit Report', icon: Shield, color: 'text-purple-600' },
 ];
 

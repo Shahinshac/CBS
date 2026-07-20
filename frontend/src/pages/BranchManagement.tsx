@@ -264,7 +264,6 @@ export const BranchManagement = () => {
                     value={form.code}
                     onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
                     placeholder="MUM001"
-                    disabled={!!editingBranch}
                     required
                   />
                 </div>
