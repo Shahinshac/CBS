@@ -6,18 +6,12 @@ import { useAuthStore } from '../store/authStore';
 const ROLE_LABELS: Record<string, string> = {
   teller: 'Teller / Cashier',
   branch_manager: 'Branch Manager',
-  loan_officer: 'Loan Officer',
-  customer_support: 'Customer Support',
-  auditor: 'Auditor',
   super_admin: 'Super Admin',
 };
 
 const ROLE_COLORS: Record<string, string> = {
   teller: 'bg-blue-50 text-blue-700 border-blue-100',
   branch_manager: 'bg-purple-50 text-purple-700 border-purple-100',
-  loan_officer: 'bg-amber-50 text-amber-700 border-amber-100',
-  customer_support: 'bg-teal-50 text-teal-700 border-teal-100',
-  auditor: 'bg-slate-50 text-slate-700 border-slate-200',
   super_admin: 'bg-rose-50 text-rose-700 border-rose-100',
 };
 
@@ -390,9 +384,6 @@ export const StaffManagement = () => {
                 onChange={e => setForm({ ...form, role: e.target.value })}
               >
                 <option value="teller">Teller / Cashier</option>
-                <option value="loan_officer">Loan Officer</option>
-                <option value="customer_support">Customer Support</option>
-                <option value="auditor">Auditor</option>
                 <option value="branch_manager">Branch Manager</option>
                 <option value="super_admin">Super Admin</option>
               </select>
@@ -483,9 +474,6 @@ export const StaffManagement = () => {
                   onChange={e => setEditForm({ ...editForm, role: e.target.value })}
                 >
                   <option value="teller">Teller / Cashier</option>
-                  <option value="loan_officer">Loan Officer</option>
-                  <option value="customer_support">Customer Support</option>
-                  <option value="auditor">Auditor</option>
                   <option value="branch_manager">Branch Manager</option>
                   <option value="super_admin">Super Admin</option>
                 </select>
