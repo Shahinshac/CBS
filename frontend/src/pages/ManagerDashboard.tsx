@@ -3,7 +3,7 @@ import {
   Users, CheckCircle, Activity, Loader2, Landmark,
   ArrowUpDown, RefreshCw, IndianRupee, FileCheck, Clock
 } from 'lucide-react';
-import { adminAPI, transactionAPI, loanAPI, accountAPI } from '../services/api';
+import { adminAPI, transactionAPI, loanAPI, accountAPI, chequeAPI } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 
 export const ManagerDashboard = () => {
@@ -19,6 +19,8 @@ export const ManagerDashboard = () => {
   const [acctMsg, setAcctMsg] = useState<{ id: string; type: 'success' | 'error'; text: string } | null>(null);
   const [pendingTx, setPendingTx] = useState<any[]>([]);
   const [txAppMsg, setTxAppMsg] = useState<{ id: string; type: 'success' | 'error'; text: string } | null>(null);
+  const [chequeReqs, setChequeReqs] = useState<any[]>([]);
+  const [chequeMsg, setChequeMsg] = useState<{ id: string; type: 'success' | 'error'; text: string } | null>(null);
 
   const handleAccountAction = async (accountId: string, action: 'approve' | 'reject') => {
     setActionLoading(accountId);
@@ -65,18 +67,33 @@ export const ManagerDashboard = () => {
     }
   };
 
+  const handleChequeAction = async (reqId: string, action: 'approved' | 'rejected') => {
+    setActionLoading(reqId);
+    setChequeMsg(null);
+    try {
+      await chequeAPI.updateRequest(reqId, { status: action, tracking_no: action === 'approved' ? 'TRK' + Math.floor(100000 + Math.random() * 900005) : null });
+      setChequeMsg({ id: reqId, type: 'success', text: `Cheque request ${action}.` });
+      setChequeReqs(prev => prev.filter(r => r.id !== reqId));
+    } catch {
+      setChequeMsg({ id: reqId, type: 'error', text: 'Failed to update cheque request.' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   useEffect(() => { fetchAll(); }, []);
 
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [customersRes, txRes, loansRes, statsRes, cashRes, pendingTxRes] = await Promise.all([
+      const [customersRes, txRes, loansRes, statsRes, cashRes, pendingTxRes, chequeRes] = await Promise.all([
         adminAPI.getCustomers(),
         transactionAPI.getAll({ limit: 15 }),
         loanAPI.getAll(),
         adminAPI.getStats(),
         adminAPI.getBranchCash(),
         transactionAPI.getPending(),
+        chequeAPI.getRequests(),
       ]);
       setCustomers(customersRes.data.customers || []);
       setTransactions(txRes.data.transactions || []);
@@ -84,6 +101,7 @@ export const ManagerDashboard = () => {
       setStats(statsRes.data);
       setBranchCash(cashRes.data);
       setPendingTx(pendingTxRes.data.transactions || []);
+      setChequeReqs((chequeRes.data || []).filter((r: any) => r.status === 'pending'));
     } catch {
       // partial failures are ok — show what we have
     } finally {
@@ -362,6 +380,54 @@ export const ManagerDashboard = () => {
                         <button
                           onClick={() => handleTxApprovalAction(t.id, 'reject')}
                           disabled={actionLoading === t.id}
+                          className="flex-1 py-1.5 bg-red-100 text-red-700 text-xs font-semibold rounded hover:bg-red-200 cursor-pointer disabled:opacity-60 transition-colors"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Pending Cheque Book Requests */}
+              <div className="premium-card overflow-hidden">
+                <div className="p-5 border-b border-slate-100 bg-slate-50/50">
+                  <h3 className="font-bold text-slate-900 flex items-center text-sm">
+                    <Clock className="w-4 h-4 mr-2 text-blue-600" />
+                    Cheque Requests ({chequeReqs.length})
+                  </h3>
+                </div>
+                <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
+                  {chequeReqs.length === 0 ? (
+                    <div className="p-6 text-center text-slate-400 text-sm">No pending cheque requests</div>
+                  ) : chequeReqs.map((req: any) => (
+                    <div key={req.id} className="p-4 text-xs">
+                      {chequeMsg && chequeMsg.id === req.id && (
+                        <div className={`mb-2 p-2 rounded border font-medium ${chequeMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
+                          {chequeMsg.text}
+                        </div>
+                      )}
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <p className="font-semibold text-slate-900 text-sm">
+                            {req.account?.user?.first_name} {req.account?.user?.last_name}
+                          </p>
+                          <p className="text-slate-500">Account: {req.account?.account_number}</p>
+                          <p className="text-slate-500">Leaves: {req.leaves} Book</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleChequeAction(req.id, 'approved')}
+                          disabled={actionLoading === req.id}
+                          className="flex-1 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded hover:bg-blue-700 cursor-pointer disabled:opacity-60 transition-colors"
+                        >
+                          {actionLoading === req.id ? '...' : 'Approve'}
+                        </button>
+                        <button
+                          onClick={() => handleChequeAction(req.id, 'rejected')}
+                          disabled={actionLoading === req.id}
                           className="flex-1 py-1.5 bg-red-100 text-red-700 text-xs font-semibold rounded hover:bg-red-200 cursor-pointer disabled:opacity-60 transition-colors"
                         >
                           Reject

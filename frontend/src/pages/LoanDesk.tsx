@@ -174,7 +174,7 @@ export const LoanDesk = () => {
                     </div>
 
                     <div className="flex gap-2 mt-4">
-                      {loan.status === 'pending' && (
+                      {(loan.status === 'pending' || loan.status === 'under_review') && (
                         <>
                           <button
                             onClick={() => handleStatusUpdate(loan.id, 'approved')}
