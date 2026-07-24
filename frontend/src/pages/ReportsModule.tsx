@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   FileText, BarChart3, TrendingUp, IndianRupee, Shield,
-  Printer, Calendar, Filter, Loader2, RefreshCcw
+  Printer, Loader2, RefreshCcw, BookOpen, Scale, Landmark, ShieldAlert, DollarSign, Calendar, Filter
 } from 'lucide-react';
 import { reportAPI, branchAPI } from '../services/api';
 
@@ -9,14 +9,19 @@ const fmt = (n: number) =>
   `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 const fmtN = (n: number) => Number(n || 0).toLocaleString('en-IN');
 
-type ReportType = 'daily' | 'monthly' | 'loans' | 'cash' | 'audit';
+type ReportType = 'daily' | 'monthly' | 'loans' | 'cash' | 'audit' | 'trial_balance' | 'profit_loss' | 'balance_sheet' | 'gl' | 'aml';
 
 const REPORT_TYPES = [
   { id: 'daily' as ReportType, label: 'Daily Transactions', icon: FileText, color: 'text-blue-600' },
   { id: 'monthly' as ReportType, label: 'Monthly Summary', icon: BarChart3, color: 'text-indigo-600' },
   { id: 'loans' as ReportType, label: 'Loan Report', icon: TrendingUp, color: 'text-emerald-600' },
   { id: 'cash' as ReportType, label: 'Cash & Balances', icon: IndianRupee, color: 'text-amber-600' },
-  { id: 'audit' as ReportType, label: 'Audit Report', icon: Shield, color: 'text-purple-600' },
+  { id: 'trial_balance' as ReportType, label: 'Trial Balance', icon: Scale, color: 'text-purple-600' },
+  { id: 'profit_loss' as ReportType, label: 'Profit & Loss', icon: DollarSign, color: 'text-teal-600' },
+  { id: 'balance_sheet' as ReportType, label: 'Balance Sheet', icon: Landmark, color: 'text-blue-700' },
+  { id: 'gl' as ReportType, label: 'General Ledger', icon: BookOpen, color: 'text-slate-700' },
+  { id: 'aml' as ReportType, label: 'AML & Risk', icon: ShieldAlert, color: 'text-red-600' },
+  { id: 'audit' as ReportType, label: 'Audit Log Report', icon: Shield, color: 'text-slate-600' },
 ];
 
 const TX_COLORS: Record<string, string> = {
@@ -50,7 +55,7 @@ export const ReportsModule = () => {
   const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
 
   useEffect(() => {
-    branchAPI.getAll().then((r) => setBranches(r.data.branches || []));
+    branchAPI.getAll().then((r: any) => setBranches(r.data.branches || []));
   }, []);
 
   useEffect(() => { fetchReport(); }, [activeReport]);
@@ -65,6 +70,11 @@ export const ReportsModule = () => {
       else if (activeReport === 'loans') res = await reportAPI.loans();
       else if (activeReport === 'cash') res = await reportAPI.cash({ branch_id: branchId || undefined });
       else if (activeReport === 'audit') res = await reportAPI.audit({ from_date: fromDate, to_date: toDate });
+      else if (activeReport === 'trial_balance') res = await reportAPI.trialBalance();
+      else if (activeReport === 'profit_loss') res = await reportAPI.profitLoss();
+      else if (activeReport === 'balance_sheet') res = await reportAPI.balanceSheet();
+      else if (activeReport === 'gl') res = await reportAPI.gl();
+      else if (activeReport === 'aml') res = await reportAPI.aml();
       if (res) setData(res.data);
     } catch (err) {
       console.error('Report error:', err);
@@ -422,54 +432,217 @@ export const ReportsModule = () => {
             </div>
           )}
 
-          {/* ─── Audit Report ─────────────────────────────────────── */}
-          {activeReport === 'audit' && (
+          {/* ─── Trial Balance ─────────────────────────────────────── */}
+          {activeReport === 'trial_balance' && (
             <div className="space-y-5">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-purple-50 rounded-xl p-4">
-                  <p className="text-xl font-bold text-purple-600">{fmtN(data.total_events)}</p>
-                  <p className="text-xs text-slate-600 mt-1">Total Events</p>
+              <div className="flex justify-between items-center p-4 bg-purple-50 rounded-xl border border-purple-100">
+                <div>
+                  <h3 className="font-bold text-purple-900 text-base">General Ledger Trial Balance</h3>
+                  <p className="text-xs text-purple-700 mt-0.5">ACID Double-Entry Debit/Credit Verification</p>
                 </div>
-                {Object.entries(data.by_module || {}).slice(0, 3).map(([mod, cnt]: any) => (
-                  <div key={mod} className="bg-slate-50 rounded-xl p-4">
-                    <p className="text-xl font-bold text-slate-900">{cnt}</p>
-                    <p className="text-xs text-slate-600 mt-1 capitalize">{mod}</p>
-                  </div>
-                ))}
+                <span className="px-3 py-1 bg-purple-600 text-white rounded-full text-xs font-bold">
+                  {data.status}
+                </span>
               </div>
               <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                <div className="p-4 border-b"><h3 className="font-semibold">Audit Trail ({data.total_events} events)</h3></div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50">
-                      <tr>
-                        {['Timestamp', 'User', 'Role', 'Module', 'Action', 'Status'].map((h) => (
-                          <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-600 uppercase">{h}</th>
-                        ))}
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b">
+                    <tr>
+                      <th className="text-left px-4 py-3 text-xs font-bold text-slate-600 uppercase">GL Code</th>
+                      <th className="text-left px-4 py-3 text-xs font-bold text-slate-600 uppercase">GL Account Name</th>
+                      <th className="text-left px-4 py-3 text-xs font-bold text-slate-600 uppercase">Category</th>
+                      <th className="text-right px-4 py-3 text-xs font-bold text-slate-600 uppercase">Debit (₹)</th>
+                      <th className="text-right px-4 py-3 text-xs font-bold text-slate-600 uppercase">Credit (₹)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(data.rows || []).map((row: any) => (
+                      <tr key={row.code} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 font-mono text-xs font-bold text-slate-700">{row.code}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-900">{row.name}</td>
+                        <td className="px-4 py-3 text-slate-600 capitalize">{row.type}</td>
+                        <td className="px-4 py-3 text-right font-mono font-semibold text-blue-700">{row.debit > 0 ? fmt(row.debit) : '—'}</td>
+                        <td className="px-4 py-3 text-right font-mono font-semibold text-emerald-700">{row.credit > 0 ? fmt(row.credit) : '—'}</td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {(data.logs || []).map((log: any) => (
-                        <tr key={log.id} className="hover:bg-slate-50">
-                          <td className="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap">{new Date(log.timestamp).toLocaleString('en-IN')}</td>
-                          <td className="px-4 py-2.5 text-slate-800 font-medium">
-                            {log.user ? `${log.user.first_name} ${log.user.last_name}` : 'System'}
-                          </td>
-                          <td className="px-4 py-2.5">
-                            <span className="text-xs bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded capitalize">{log.role}</span>
-                          </td>
-                          <td className="px-4 py-2.5 text-slate-600 capitalize">{log.module}</td>
-                          <td className="px-4 py-2.5 text-slate-700">{log.action?.substring(0, 60)}</td>
-                          <td className="px-4 py-2.5">
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${
-                              log.status === 'success' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
-                            }`}>{log.status}</span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-slate-100 font-bold text-slate-900 border-t border-slate-300">
+                    <tr>
+                      <td colSpan={3} className="px-4 py-3 uppercase text-xs">Total Trial Balance</td>
+                      <td className="px-4 py-3 text-right font-mono text-blue-800 text-base">{fmt(data.total_debit)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-emerald-800 text-base">{fmt(data.total_credit)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ─── Profit & Loss ─────────────────────────────────────── */}
+          {activeReport === 'profit_loss' && (
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
+                  <p className="text-xs font-bold text-emerald-700 uppercase">Total Revenue / Income</p>
+                  <p className="text-2xl font-black text-emerald-900 mt-1">{fmt(data.total_income)}</p>
                 </div>
+                <div className="bg-red-50 rounded-xl p-4 border border-red-100">
+                  <p className="text-xs font-bold text-red-700 uppercase">Total Interest & Operating Expenses</p>
+                  <p className="text-2xl font-black text-red-900 mt-1">{fmt(data.total_expenses)}</p>
+                </div>
+                <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+                  <p className="text-xs font-bold text-blue-700 uppercase">Net Operating Profit (Margin: {data.profit_margin})</p>
+                  <p className="text-2xl font-black text-blue-900 mt-1">{fmt(data.net_profit)}</p>
+                </div>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+                <h3 className="font-bold text-slate-900 text-base border-b pb-2">Profit & Loss Breakdown</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between py-2 border-b border-slate-100">
+                    <span className="font-medium text-slate-700">Loan Interest Income</span>
+                    <span className="font-mono font-bold text-emerald-700">{fmt(data.interest_income)}</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b border-slate-100">
+                    <span className="font-medium text-slate-700">Banking Service Fees & Charges</span>
+                    <span className="font-mono font-bold text-emerald-700">{fmt(data.fee_income)}</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b border-slate-100">
+                    <span className="font-medium text-slate-700">Deposit Interest Expense</span>
+                    <span className="font-mono font-bold text-red-600">({fmt(data.interest_expense)})</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b border-slate-100">
+                    <span className="font-medium text-slate-700">Operating & Administrative Expenses</span>
+                    <span className="font-mono font-bold text-red-600">({fmt(data.operating_expense)})</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ─── Balance Sheet ─────────────────────────────────────── */}
+          {activeReport === 'balance_sheet' && (
+            <div className="space-y-5">
+              <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-blue-900 text-base">Commercial Bank Balance Sheet</h3>
+                  <p className="text-xs text-blue-700 mt-0.5">As of {new Date(data.as_of).toLocaleDateString()}</p>
+                </div>
+                <span className="px-3 py-1 bg-blue-600 text-white rounded-full text-xs font-bold">
+                  {data.is_balanced ? 'Assets = Liabilities + Equity' : 'Audit Check'}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Assets */}
+                <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+                  <h4 className="font-bold text-slate-900 text-base border-b pb-2 text-emerald-700">ASSETS</h4>
+                  {(data.assets || []).map((a: any) => (
+                    <div key={a.code} className="flex justify-between text-sm py-1 border-b border-slate-100">
+                      <span className="text-slate-700">{a.name}</span>
+                      <span className="font-mono font-bold text-slate-900">{fmt(a.balance)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between font-extrabold text-base pt-2 text-emerald-800 border-t border-slate-300">
+                    <span>TOTAL ASSETS</span>
+                    <span className="font-mono">{fmt(data.total_assets)}</span>
+                  </div>
+                </div>
+
+                {/* Liabilities & Equity */}
+                <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+                  <h4 className="font-bold text-slate-900 text-base border-b pb-2 text-blue-700">LIABILITIES & EQUITY</h4>
+                  <p className="text-xs font-bold text-slate-500 uppercase">Liabilities</p>
+                  {(data.liabilities || []).map((l: any) => (
+                    <div key={l.code} className="flex justify-between text-sm py-1 border-b border-slate-100">
+                      <span className="text-slate-700">{l.name}</span>
+                      <span className="font-mono font-bold text-slate-900">{fmt(l.balance)}</span>
+                    </div>
+                  ))}
+                  <p className="text-xs font-bold text-slate-500 uppercase pt-2">Equity & Capital</p>
+                  {(data.equity || []).map((e: any) => (
+                    <div key={e.code} className="flex justify-between text-sm py-1 border-b border-slate-100">
+                      <span className="text-slate-700">{e.name}</span>
+                      <span className="font-mono font-bold text-slate-900">{fmt(e.balance)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between font-extrabold text-base pt-2 text-blue-800 border-t border-slate-300">
+                    <span>TOTAL LIABILITIES & EQUITY</span>
+                    <span className="font-mono">{fmt(data.total_liabilities + data.total_equity)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ─── General Ledger ─────────────────────────────────────── */}
+          {activeReport === 'gl' && (
+            <div className="space-y-5">
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <div className="p-4 border-b"><h3 className="font-semibold text-slate-900">General Ledger Accounts Summary</h3></div>
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="text-left px-4 py-3 text-xs font-bold text-slate-600 uppercase">GL Code</th>
+                      <th className="text-left px-4 py-3 text-xs font-bold text-slate-600 uppercase">Account Name</th>
+                      <th className="text-left px-4 py-3 text-xs font-bold text-slate-600 uppercase">Type</th>
+                      <th className="text-right px-4 py-3 text-xs font-bold text-slate-600 uppercase">Current Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(data.gl_accounts || []).map((gl: any) => (
+                      <tr key={gl.code} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 font-mono font-bold text-blue-700 text-xs">{gl.code}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-900">{gl.name}</td>
+                        <td className="px-4 py-3 capitalize text-slate-600">{gl.type}</td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-slate-900">{fmt(gl.balance)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ─── AML Report ─────────────────────────────────────── */}
+          {activeReport === 'aml' && (
+            <div className="space-y-5">
+              <div className="p-4 bg-red-50 rounded-xl border border-red-100 flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-red-900 text-base">Anti-Money Laundering (AML) Risk Queue</h3>
+                  <p className="text-xs text-red-700 mt-0.5">High-Value Transaction Threshold Monitoring ({data.high_risk_threshold})</p>
+                </div>
+                <span className="px-3 py-1 bg-red-600 text-white rounded-full text-xs font-bold">
+                  {data.total_flagged_transactions} Flagged Events
+                </span>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="text-left px-4 py-3 text-xs font-bold text-slate-600 uppercase">Reference #</th>
+                      <th className="text-left px-4 py-3 text-xs font-bold text-slate-600 uppercase">Sender</th>
+                      <th className="text-left px-4 py-3 text-xs font-bold text-slate-600 uppercase">Receiver</th>
+                      <th className="text-right px-4 py-3 text-xs font-bold text-slate-600 uppercase">Amount</th>
+                      <th className="text-left px-4 py-3 text-xs font-bold text-slate-600 uppercase">Risk Rating</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(data.flagged_transactions || []).map((t: any) => (
+                      <tr key={t.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 font-mono text-xs text-slate-500">{t.reference_number?.slice(0, 12)}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-900">{t.sender}</td>
+                        <td className="px-4 py-3 text-slate-700">{t.receiver}</td>
+                        <td className="px-4 py-3 text-right font-mono font-extrabold text-slate-900">{fmt(t.amount)}</td>
+                        <td className="px-4 py-3">
+                          <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${
+                            t.risk_level.includes('HIGH') ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            {t.risk_level}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

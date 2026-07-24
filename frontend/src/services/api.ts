@@ -251,6 +251,11 @@ export const reportAPI = {
   loans: () => api.get('/reports/loans'),
   cash: (params?: { branch_id?: string }) => api.get('/reports/cash', { params }),
   audit: (params?: { from_date?: string; to_date?: string }) => api.get('/reports/audit', { params }),
+  gl: () => api.get('/reports/gl'),
+  trialBalance: () => api.get('/reports/trial-balance'),
+  profitLoss: () => api.get('/reports/profit-loss'),
+  balanceSheet: () => api.get('/reports/balance-sheet'),
+  aml: () => api.get('/reports/aml'),
 };
 
 // ─── System ────────────────────────────────────────────────────────────────
