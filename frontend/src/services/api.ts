@@ -84,6 +84,8 @@ export const authAPI = {
     api.post('/auth/register-check', data),
   finalizeRegister: (data: any) => api.post('/auth/register-finalize', data),
   checkUsername: (username: string) => api.get(`/auth/check-username/${username}`),
+  updateProfile: (data: any) => api.patch('/auth/profile', data),
+  changePassword: (data: any) => api.post('/auth/change-password', data),
 };
 
 // ─── Universal Search ──────────────────────────────────────────────────────
@@ -107,9 +109,12 @@ export const accountAPI = {
   getById: (id: string) => api.get(`/accounts/${id}`),
   create: (data: any) => api.post('/accounts', data),
   update: (id: string, data: any) => api.patch(`/accounts/${id}`, data),
+  approve: (id: string, data: { approved_by: string }) => api.patch(`/accounts/${id}/approve`, data),
+  reactivate: (id: string, data: { updated_by: string }) => api.patch(`/accounts/${id}/reactivate`, data),
   createFdRd: (data: any) => api.post('/accounts/fdrd', data),
   getStatement: (id: string, params?: { from_date?: string; to_date?: string }) =>
     `${API_BASE_URL}/accounts/${id}/statement/pdf?from_date=${params?.from_date || ''}&to_date=${params?.to_date || ''}`,
+  getPassbook: (id: string) => `${API_BASE_URL}/accounts/${id}/passbook/pdf`,
 };
 
 // ─── Transactions ──────────────────────────────────────────────────────────
@@ -120,6 +125,11 @@ export const transactionAPI = {
   withdraw: (data: any) => api.post('/transactions/withdraw', data),
   transfer: (data: any) => api.post('/transactions/transfer', data),
   cbsTransfer: (data: any) => api.post('/transactions/transfer/cbs', data),
+  getReceipt: (id: string) => `${API_BASE_URL}/transactions/${id}/receipt/pdf`,
+  getPending: () => api.get('/transactions/pending'),
+  approve: (id: string, data: { approved_by: string }) => api.patch(`/transactions/${id}/approve`, data),
+  reject: (id: string, data: { rejected_by: string }) => api.patch(`/transactions/${id}/reject`, data),
+  reverse: (id: string, data: { requested_by: string }) => api.post(`/transactions/${id}/reverse`, data),
 };
 
 // ─── Cards ─────────────────────────────────────────────────────────────────
@@ -236,6 +246,15 @@ export const reportAPI = {
 // ─── System ────────────────────────────────────────────────────────────────
 export const systemAPI = {
   health: () => api.get('/system/health'),
+  processEOD: (data: any) => api.post('/system/process-eod', data),
+};
+
+// ─── Standing Instructions (Scheduled Payments) ────────────────────────────
+export const scheduledPaymentAPI = {
+  getAll: (params?: { account_id?: string; user_id?: string }) =>
+    api.get('/accounts/scheduled-payments', { params }),
+  create: (data: any) => api.post('/accounts/scheduled-payments', data),
+  cancel: (id: string) => api.patch(`/accounts/scheduled-payments/${id}/cancel`),
 };
 
 // ─── CBS Misc (legacy compat) ──────────────────────────────────────────────

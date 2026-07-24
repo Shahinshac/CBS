@@ -167,6 +167,7 @@ export const TellerWorkspace = () => {
       const tx = res?.data?.transaction;
       setTxStatus({ type: 'success', message: res?.data?.message || 'Transaction successful.' });
       setReceiptData({
+        id: tx?.id,
         type: activeTab,
         amount: parseFloat(amount),
         account: selectedAccount.account_number,
@@ -370,7 +371,7 @@ export const TellerWorkspace = () => {
                   }`}>KYC {selectedCustomer.kyc_status || 'pending'}</span>
                 </div>
               </div>
-              <div className="space-y-2 text-sm text-slate-600">
+              <div className="space-y-2 text-sm text-slate-600 mb-4">
                 <div className="flex items-center gap-2"><User className="w-4 h-4 text-slate-400" /><span>Username: <span className="font-mono font-bold text-slate-800">{selectedCustomer.username}</span></span></div>
                 <div className="flex items-center gap-2"><Mail className="w-4 h-4 text-slate-400" />{selectedCustomer.email}</div>
                 <div className="flex items-center gap-2"><Phone className="w-4 h-4 text-slate-400" />{selectedCustomer.phone_number || '—'}</div>
@@ -379,6 +380,16 @@ export const TellerWorkspace = () => {
                   <span className="text-xs text-slate-500">ID: {selectedCustomer.id?.slice(0, 8)}</span>
                 </div>
               </div>
+              {selectedAccount && (
+                <a
+                  href={accountAPI.getPassbook(selectedAccount.id)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 px-4 rounded-lg transition shadow-sm mb-2"
+                >
+                  <BookOpen className="w-4 h-4" /> Print Passbook (PDF)
+                </a>
+              )}
             </div>
 
             {/* Account Selector */}
@@ -487,9 +498,20 @@ export const TellerWorkspace = () => {
                     <div className="flex justify-between"><span>Time:</span><span>{receiptData.time}</span></div>
                     <div className="flex justify-between"><span>Teller:</span><span>{receiptData.teller}</span></div>
                   </div>
-                  <button onClick={() => window.print()} className="mt-3 w-full flex items-center justify-center gap-1 text-xs text-blue-600 hover:text-blue-700">
-                    <Printer className="w-3 h-3" /> Print Receipt
-                  </button>
+                  {receiptData.id ? (
+                    <a
+                      href={transactionAPI.getReceipt(receiptData.id)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-3 w-full flex items-center justify-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-bold py-2 border border-blue-200 rounded-lg bg-blue-50/50 hover:bg-blue-50 transition"
+                    >
+                      <Printer className="w-3.5 h-3.5" /> Download / Print Receipt (PDF)
+                    </a>
+                  ) : (
+                    <button onClick={() => window.print()} className="mt-3 w-full flex items-center justify-center gap-1 text-xs text-blue-600 hover:text-blue-700">
+                      <Printer className="w-3 h-3" /> Print Receipt
+                    </button>
+                  )}
                 </div>
               )}
 

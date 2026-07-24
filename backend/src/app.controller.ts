@@ -318,6 +318,7 @@ export class AppController {
         minimum_balance: minBalMap[mappedType] ?? 0,
         user_id,
         branch_id: branch_id || user.branch_id,
+        status: 'pending',
       },
     });
 
@@ -389,6 +390,40 @@ export class AppController {
     });
     await audit(this.prisma, { user_id: updated_by, role: 'branch_manager', action: `Account ${account.account_number} updated`, module: 'accounts' });
     return { message: 'Account updated.', account };
+  }
+
+  @Patch('accounts/:id/approve')
+  async approveAccount(@Param('id') id: string, @Body() body: any) {
+    const { approved_by } = body;
+    const account = await this.prisma.account.update({
+      where: { id },
+      data: { status: 'active' },
+      include: { user: true },
+    });
+    await audit(this.prisma, {
+      user_id: approved_by,
+      role: 'branch_manager',
+      action: `Approved account: ${account.account_number} for customer ${account.user.first_name} ${account.user.last_name}`,
+      module: 'accounts',
+    });
+    return { message: 'Account approved successfully.', account };
+  }
+
+  @Patch('accounts/:id/reactivate')
+  async reactivateAccount(@Param('id') id: string, @Body() body: any) {
+    const { updated_by } = body;
+    const account = await this.prisma.account.update({
+      where: { id },
+      data: { status: 'active' },
+      include: { user: true },
+    });
+    await audit(this.prisma, {
+      user_id: updated_by,
+      role: 'branch_manager',
+      action: `Reactivated dormant account: ${account.account_number} for customer ${account.user.first_name} ${account.user.last_name}`,
+      module: 'accounts',
+    });
+    return { message: 'Account reactivated successfully.', account };
   }
 
   // FD / RD
@@ -468,14 +503,38 @@ export class AppController {
     if (!amount || parseFloat(amount) <= 0) throw new BadRequestException('Invalid amount');
     if (account.status !== 'active') throw new BadRequestException('Account is not active');
 
+    const amt = parseFloat(amount);
+    const isHighValue = amt > 50000;
+
+    if (isHighValue) {
+      const tx = await this.prisma.transaction.create({
+        data: {
+          amount: amt,
+          transaction_type: 'deposit',
+          description: (description || 'Cash Deposit') + ' (Pending Manager Approval)',
+          to_account_id: account_id,
+          status: 'pending_approval',
+          channel: channel || 'branch',
+          performed_by: performed_by || null,
+        },
+      });
+      await audit(this.prisma, {
+        user_id: performed_by,
+        role: 'teller',
+        action: `High-value Deposit of ₹${amt.toLocaleString('en-IN')} to A/C ${account.account_number} queued for approval`,
+        module: 'transactions',
+      });
+      return { message: 'High-value deposit queued for manager approval.', transaction: tx };
+    }
+
     const tx = await this.prisma.$transaction(async (txClient) => {
       await txClient.account.update({
         where: { id: account_id },
-        data: { balance: { increment: parseFloat(amount) } },
+        data: { balance: { increment: amt } },
       });
       return txClient.transaction.create({
         data: {
-          amount: parseFloat(amount),
+          amount: amt,
           transaction_type: 'deposit',
           description: description || 'Cash Deposit',
           to_account_id: account_id,
@@ -490,14 +549,14 @@ export class AppController {
       audit(this.prisma, {
         user_id: performed_by,
         role: 'teller',
-        action: `Deposit ₹${parseFloat(amount).toLocaleString('en-IN')} to account ${account.account_number}`,
+        action: `Deposit ₹${amt.toLocaleString('en-IN')} to account ${account.account_number}`,
         module: 'transactions',
       }),
       this.prisma.notification.create({
         data: {
           user_id: account.user_id,
           title: 'Account Credited',
-          message: `₹${parseFloat(amount).toLocaleString('en-IN')} has been deposited to your account ${account.account_number}. Ref: ${tx.reference_number.slice(0, 8).toUpperCase()}`,
+          message: `₹${amt.toLocaleString('en-IN')} has been deposited to your account ${account.account_number}. Ref: ${tx.reference_number.slice(0, 8).toUpperCase()}`,
           type: 'success',
         },
       }),
@@ -519,14 +578,38 @@ export class AppController {
       throw new BadRequestException('Insufficient funds');
     }
 
+    const amt = parseFloat(amount);
+    const isHighValue = amt > 50000;
+
+    if (isHighValue) {
+      const tx = await this.prisma.transaction.create({
+        data: {
+          amount: amt,
+          transaction_type: 'withdrawal',
+          description: (description || 'Cash Withdrawal') + ' (Pending Manager Approval)',
+          from_account_id: account_id,
+          status: 'pending_approval',
+          channel: channel || 'branch',
+          performed_by: performed_by || null,
+        },
+      });
+      await audit(this.prisma, {
+        user_id: performed_by,
+        role: 'teller',
+        action: `High-value Withdrawal of ₹${amt.toLocaleString('en-IN')} from A/C ${account.account_number} queued for approval`,
+        module: 'transactions',
+      });
+      return { message: 'High-value withdrawal queued for manager approval.', transaction: tx };
+    }
+
     const tx = await this.prisma.$transaction(async (txClient) => {
       await txClient.account.update({
         where: { id: account_id },
-        data: { balance: { decrement: parseFloat(amount) } },
+        data: { balance: { decrement: amt } },
       });
       return txClient.transaction.create({
         data: {
-          amount: parseFloat(amount),
+          amount: amt,
           transaction_type: 'withdrawal',
           description: description || 'Cash Withdrawal',
           from_account_id: account_id,
@@ -541,14 +624,14 @@ export class AppController {
       audit(this.prisma, {
         user_id: performed_by,
         role: 'teller',
-        action: `Withdrawal ₹${parseFloat(amount).toLocaleString('en-IN')} from account ${account.account_number}`,
+        action: `Withdrawal ₹${amt.toLocaleString('en-IN')} from account ${account.account_number}`,
         module: 'transactions',
       }),
       this.prisma.notification.create({
         data: {
           user_id: account.user_id,
           title: 'Account Debited',
-          message: `₹${parseFloat(amount).toLocaleString('en-IN')} has been withdrawn from your account ${account.account_number}. Ref: ${tx.reference_number.slice(0, 8).toUpperCase()}`,
+          message: `₹${amt.toLocaleString('en-IN')} has been withdrawn from your account ${account.account_number}. Ref: ${tx.reference_number.slice(0, 8).toUpperCase()}`,
           type: 'info',
         },
       }),
@@ -572,6 +655,40 @@ export class AppController {
     }
 
     const isExternal = to_ifsc && !to_ifsc.trim().toUpperCase().startsWith('CRBN');
+    const isHighValue = amt > 50000;
+
+    // Check if destination is internal to fetch detail
+    let toAccount: any = null;
+    if (!isExternal) {
+      toAccount = await this.prisma.account.findFirst({
+        where: { OR: [{ id: to_account_id }, { account_number: to_account_id }] },
+      });
+      if (!toAccount) throw new NotFoundException('Destination account not found in CoreBank system');
+      if (fromAccount.id === toAccount.id) throw new BadRequestException('Cannot transfer to same account');
+      if (toAccount.status !== 'active') throw new BadRequestException('Destination account is not active');
+    }
+
+    if (isHighValue) {
+      const tx = await this.prisma.transaction.create({
+        data: {
+          amount: amt,
+          transaction_type: 'transfer',
+          description: (description || `Transfer to ${to_recipient_name || to_account_id}`) + ' (Pending Manager Approval)',
+          from_account_id: fromAccount.id,
+          to_account_id: isExternal ? null : toAccount.id,
+          status: 'pending_approval',
+          channel: channel || 'net_banking',
+          performed_by: performed_by || null,
+        },
+      });
+      await audit(this.prisma, {
+        user_id: performed_by || fromAccount.user_id,
+        role: performed_by ? 'teller' : 'customer',
+        action: `High-value Transfer of ₹${amt.toLocaleString('en-IN')} from A/C ${fromAccount.account_number} queued for approval`,
+        module: 'transactions',
+      });
+      return { message: 'High-value transfer queued for manager approval.', transaction: tx };
+    }
 
     if (isExternal) {
       // Process as external transfer to another bank
@@ -610,14 +727,7 @@ export class AppController {
       return { message: 'External transfer initiated successfully.', transaction: txResult };
     }
 
-    // Internal Transfer
-    const toAccount = await this.prisma.account.findFirst({
-      where: { OR: [{ id: to_account_id }, { account_number: to_account_id }] },
-    });
-    if (!toAccount) throw new NotFoundException('Destination account not found in CoreBank system');
-    if (fromAccount.id === toAccount.id) throw new BadRequestException('Cannot transfer to same account');
-    if (toAccount.status !== 'active') throw new BadRequestException('Destination account is not active');
-
+    // Process Internal Transfer
     const txResult = await this.prisma.$transaction(async (txClient) => {
       await txClient.account.update({ where: { id: fromAccount.id }, data: { balance: { decrement: amt } } });
       await txClient.account.update({ where: { id: toAccount.id }, data: { balance: { increment: amt } } });
@@ -677,6 +787,116 @@ export class AppController {
       performed_by,
       channel: 'net_banking',
     });
+  }
+
+  @Get('transactions/pending')
+  async listPendingTransactions() {
+    const transactions = await this.prisma.transaction.findMany({
+      where: { status: 'pending_approval' },
+      include: {
+        from_account: { include: { user: { select: { first_name: true, last_name: true } } } },
+        to_account: { include: { user: { select: { first_name: true, last_name: true } } } },
+      },
+    });
+    return { transactions };
+  }
+
+  @Patch('transactions/:id/approve')
+  async approveTransaction(@Param('id') id: string, @Body() body: any) {
+    const { approved_by } = body;
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id },
+      include: { from_account: true, to_account: true },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+    if (tx.status !== 'pending_approval') throw new BadRequestException('Transaction is not pending approval');
+
+    // Perform actual accounting logic!
+    const updated = await this.prisma.$transaction(async (txClient) => {
+      if (tx.transaction_type === 'deposit') {
+        await txClient.account.update({
+          where: { id: tx.to_account_id },
+          data: { balance: { increment: tx.amount } },
+        });
+      } else if (tx.transaction_type === 'withdrawal') {
+        await txClient.account.update({
+          where: { id: tx.from_account_id },
+          data: { balance: { decrement: tx.amount } },
+        });
+      } else if (tx.transaction_type === 'transfer') {
+        await txClient.account.update({
+          where: { id: tx.from_account_id },
+          data: { balance: { decrement: tx.amount } },
+        });
+        if (tx.to_account_id) {
+          await txClient.account.update({
+            where: { id: tx.to_account_id },
+            data: { balance: { increment: tx.amount } },
+          });
+        }
+      }
+
+      return txClient.transaction.update({
+        where: { id },
+        data: { status: 'success' },
+      });
+    });
+
+    await audit(this.prisma, {
+      user_id: approved_by,
+      role: 'branch_manager',
+      action: `Approved high-value ${tx.transaction_type} of ₹${Number(tx.amount).toLocaleString('en-IN')}`,
+      module: 'transactions',
+    });
+
+    return { message: 'Transaction approved and executed successfully.', transaction: updated };
+  }
+
+  @Patch('transactions/:id/reject')
+  async rejectTransaction(@Param('id') id: string, @Body() body: any) {
+    const { rejected_by } = body;
+    const tx = await this.prisma.transaction.update({
+      where: { id },
+      data: { status: 'failed' },
+    });
+    await audit(this.prisma, {
+      user_id: rejected_by,
+      role: 'branch_manager',
+      action: `Rejected high-value ${tx.transaction_type} of ₹${Number(tx.amount).toLocaleString('en-IN')}`,
+      module: 'transactions',
+    });
+    return { message: 'Transaction rejected successfully.', transaction: tx };
+  }
+
+  @Post('transactions/:id/reverse')
+  async reverseTransactionRequest(@Param('id') id: string, @Body() body: any) {
+    const { requested_by } = body;
+    const originalTx = await this.prisma.transaction.findUnique({ where: { id } });
+    if (!originalTx) throw new NotFoundException('Original transaction not found');
+    if (originalTx.status !== 'success') throw new BadRequestException('Only successful transactions can be reversed');
+
+    // Create a linked reversal transaction queue
+    const reversalTx = await this.prisma.transaction.create({
+      data: {
+        amount: originalTx.amount,
+        transaction_type: 'transfer',
+        description: `Reversal Request of Ref: ${originalTx.reference_number.slice(0, 8).toUpperCase()} - ${originalTx.description || ''}`,
+        status: 'pending_approval',
+        channel: 'system',
+        from_account_id: originalTx.to_account_id, // reverse accounts
+        to_account_id: originalTx.from_account_id,
+        performed_by: requested_by || null,
+      },
+    });
+
+    await audit(this.prisma, {
+      user_id: requested_by,
+      role: 'teller',
+      action: `Requested reversal of transaction ${originalTx.reference_number.slice(0, 8).toUpperCase()}`,
+      module: 'transactions',
+    });
+
+    return { message: 'Reversal request submitted for manager approval.', transaction: reversalTx };
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -941,11 +1161,50 @@ export class AppController {
       include: { user: true },
     });
 
-    // If approved, generate repayment schedule
+    // If approved, generate repayment schedule, create loan account, and disburse to savings
     if (body.status === 'approved') {
-      const emi = calculateEMI(Number(loan.approved_amount || loan.amount), Number(loan.rate), loan.duration_months);
+      const loanAmt = Number(body.approved_amount || loan.amount);
+      const emi = calculateEMI(loanAmt, Number(loan.rate), loan.duration_months);
       const r = Number(loan.rate) / 100 / 12;
-      let outstanding = Number(loan.approved_amount || loan.amount);
+      let outstanding = loanAmt;
+
+      // 1. Create a dedicated Loan Account
+      const loanAccountNum = 'LN' + Math.floor(10000000 + Math.random() * 90000000).toString();
+      const loanAccount = await this.prisma.account.create({
+        data: {
+          account_number: loanAccountNum,
+          account_type: 'loan',
+          balance: loanAmt,
+          interest_rate: loan.rate,
+          status: 'active',
+          user_id: loan.user_id,
+          branch_id: loan.user.branch_id || null,
+        },
+      });
+
+      // 2. Disburse funds to main savings account if it exists
+      const mainAccount = await this.prisma.account.findFirst({
+        where: { user_id: loan.user_id, account_type: 'savings', status: 'active' },
+      });
+      if (mainAccount) {
+        await this.prisma.$transaction(async (txClient) => {
+          await txClient.account.update({
+            where: { id: mainAccount.id },
+            data: { balance: { increment: loanAmt } },
+          });
+          await txClient.transaction.create({
+            data: {
+              amount: loanAmt,
+              transaction_type: 'loan_disbursement',
+              description: `Loan Disbursed to savings account ${mainAccount.account_number} (Loan A/C: ${loanAccountNum})`,
+              from_account_id: loanAccount.id,
+              to_account_id: mainAccount.id,
+              status: 'success',
+              channel: 'system',
+            },
+          });
+        });
+      }
 
       for (let m = 1; m <= loan.duration_months; m++) {
         const interest = outstanding * r;
@@ -1536,6 +1795,7 @@ export class AppController {
         minimum_balance: 1000,
         user_id: user.id,
         branch_id: branch_id || null,
+        status: 'pending',
       },
     });
 
@@ -2018,10 +2278,7 @@ export class AppController {
   ) {
     const account = await this.prisma.account.findUnique({
       where: { id },
-      include: {
-        user: true,
-        branch: true,
-      },
+      include: { user: true, branch: true },
     });
     if (!account) throw new NotFoundException('Account not found');
 
@@ -2036,76 +2293,112 @@ export class AppController {
       orderBy: { created_at: 'asc' },
     });
 
-    // Calculate opening balance by going backwards
-    const earlierTx = await this.prisma.transaction.findMany({
-      where: {
-        OR: [{ from_account_id: id }, { to_account_id: id }],
-        created_at: { lt: start },
-      },
-    });
-
     let openingBalance = Number(account.balance);
+    let totalDebits = 0;
+    let totalCredits = 0;
+
     for (const tx of transactions) {
-      if (tx.from_account_id === id) openingBalance += Number(tx.amount);
-      if (tx.to_account_id === id) openingBalance -= Number(tx.amount);
+      if (tx.from_account_id === id) {
+        openingBalance += Number(tx.amount);
+        totalDebits += Number(tx.amount);
+      }
+      if (tx.to_account_id === id) {
+        openingBalance -= Number(tx.amount);
+        totalCredits += Number(tx.amount);
+      }
     }
 
-    const doc = new PDFDocument({ size: 'A4', margin: 50 });
-
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="statement_${account.account_number}.pdf"`);
     doc.pipe(res);
 
-    // ── Header ──────────────────────────────────────────────────────────────
-    doc.rect(0, 0, doc.page.width, 110).fill('#1e3a5f');
-    doc.fill('#ffffff').fontSize(26).font('Helvetica-Bold').text('COREBANK', 50, 25);
-    doc.fontSize(10).font('Helvetica').text('Enterprise Core Banking System', 50, 58);
-    doc.text('Account Statement', 50, 75);
-    doc.text(`Generated: ${new Date().toLocaleString('en-IN')}`, 50, 90);
+    // Dynamic page numbering and footer helper
+    let pageNumber = 1;
+    const addFooter = (pNum: number) => {
+      doc.save();
+      doc.fontSize(8).fillColor('#666666').font('Helvetica');
+      doc.moveTo(40, doc.page.height - 70).lineTo(doc.page.width - 40, doc.page.height - 70).stroke('#e2e8f0');
+      doc.text('This is a computer-generated bank statement and does not require a signature. Official document.', 40, doc.page.height - 60, { width: 515, align: 'center' });
+      doc.text(`CoreBank Ltd. | Helpline: 1800-200-3456 | Support: support@corebank.in | Page ${pNum}`, 40, doc.page.height - 45, { width: 515, align: 'center' });
+      doc.restore();
+    };
 
-    // Branch on right
-    doc.fontSize(9).text(account.branch?.name || 'CoreBank', doc.page.width - 250, 25, { width: 200, align: 'right' });
-    doc.text(account.branch?.address || '', doc.page.width - 250, 40, { width: 200, align: 'right' });
-    doc.text(account.branch?.phone || '', doc.page.width - 250, 55, { width: 200, align: 'right' });
+    // Header Background Band
+    doc.rect(0, 0, doc.page.width, 100).fill('#0f172a');
 
-    // ── Customer Info ────────────────────────────────────────────────────────
-    doc.fill('#000000').fontSize(11).font('Helvetica-Bold').text('Account Holder Information', 50, 130);
-    doc.moveTo(50, 146).lineTo(550, 146).stroke('#cccccc');
+    // Logo Emblem (Drawing custom vector shapes for branding)
+    doc.rect(40, 30, 10, 40).fill('#3b82f6');
+    doc.rect(55, 38, 10, 32).fill('#60a5fa');
+    doc.rect(70, 46, 10, 24).fill('#93c5fd');
 
-    const infoY = 155;
-    doc.font('Helvetica').fontSize(10);
-    doc.text(`Name: ${account.user.first_name} ${account.user.last_name}`, 50, infoY);
-    doc.text(`Email: ${account.user.email}`, 50, infoY + 16);
-    doc.text(`Phone: ${account.user.phone_number || 'N/A'}`, 50, infoY + 32);
-    doc.text(`Account Number: ${account.account_number}`, 300, infoY);
-    doc.text(`Account Type: ${account.account_type.toUpperCase()}`, 300, infoY + 16);
-    doc.text(`Status: ${account.status.toUpperCase()}`, 300, infoY + 32);
+    doc.fill('#ffffff').fontSize(24).font('Helvetica-Bold').text('COREBANK', 90, 32);
+    doc.fontSize(8).font('Helvetica').text('THE TRUSTED BANKING STANDARD', 90, 58);
+    doc.fontSize(9).text('ACCOUNT STATEMENT', 90, 72);
 
-    // ── Statement Period ────────────────────────────────────────────────────
-    doc.fontSize(11).font('Helvetica-Bold').text('Statement Period', 50, 225);
-    doc.moveTo(50, 241).lineTo(550, 241).stroke('#cccccc');
-    doc.font('Helvetica').fontSize(10);
-    doc.text(`From: ${start.toLocaleDateString('en-IN')}`, 50, 250);
-    doc.text(`To: ${end.toLocaleDateString('en-IN')}`, 200, 250);
-    doc.text(`Opening Balance: ₹${openingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, 350, 250);
+    // Branch Information (Right Side Header)
+    doc.fill('#f8fafc').fontSize(8).font('Helvetica-Bold').text(account.branch?.name?.toUpperCase() || 'COREBANK HEAD OFFICE', doc.page.width - 240, 25, { width: 200, align: 'right' });
+    doc.font('Helvetica').fillColor('#cbd5e1');
+    doc.text(account.branch?.address || '14 Nariman Point, Mumbai', doc.page.width - 240, 38, { width: 200, align: 'right' });
+    doc.text(`IFSC: ${account.branch?.code || 'CRBN0001001'}`, doc.page.width - 240, 51, { width: 200, align: 'right' });
+    doc.text(`Phone: ${account.branch?.phone || '+91-22-6600-1000'}`, doc.page.width - 240, 64, { width: 200, align: 'right' });
 
-    // ── Transaction Table ────────────────────────────────────────────────────
-    doc.fontSize(11).font('Helvetica-Bold').text('Transaction History', 50, 285);
-    doc.moveTo(50, 301).lineTo(550, 301).stroke('#cccccc');
+    // Details Grid Layout
+    doc.fillColor('#0f172a').fontSize(11).font('Helvetica-Bold').text('Account Summary Details', 40, 120);
+    doc.moveTo(40, 134).lineTo(doc.page.width - 40, 134).stroke('#cbd5e1');
 
-    // Table header
-    doc.rect(50, 305, 500, 22).fill('#1e3a5f');
-    doc.fill('#ffffff').fontSize(9).font('Helvetica-Bold');
-    doc.text('Date', 55, 312);
-    doc.text('Description', 130, 312);
-    doc.text('Type', 310, 312);
-    doc.text('Debit (₹)', 365, 312);
-    doc.text('Credit (₹)', 430, 312);
-    doc.text('Balance (₹)', 490, 312);
+    doc.font('Helvetica').fontSize(9).fillColor('#475569');
+    doc.text('Customer Details', 40, 142);
+    doc.font('Helvetica-Bold').fontSize(10).fillColor('#0f172a');
+    doc.text(`${account.user.first_name} ${account.user.last_name}`, 40, 154);
+    doc.font('Helvetica').fontSize(9).fillColor('#475569');
+    doc.text(`Cust ID: ${account.user.id.slice(0,8).toUpperCase()}`, 40, 168);
+    doc.text(`Email: ${account.user.email}`, 40, 180);
+    doc.text(`Phone: ${account.user.phone_number || 'N/A'}`, 40, 192);
+
+    doc.font('Helvetica').fontSize(9).fillColor('#475569');
+    doc.text('Account Details', doc.page.width - 240, 142, { align: 'right' });
+    doc.font('Helvetica-Bold').fontSize(10).fillColor('#0f172a');
+    doc.text(`Account No: ${account.account_number}`, doc.page.width - 240, 154, { align: 'right' });
+    doc.font('Helvetica').fontSize(9).fillColor('#475569');
+    doc.text(`Account Type: ${account.account_type.toUpperCase()}`, doc.page.width - 240, 168, { align: 'right' });
+    doc.text(`Period: ${start.toLocaleDateString('en-IN')} to ${end.toLocaleDateString('en-IN')}`, doc.page.width - 240, 180, { align: 'right' });
+    doc.text(`Status: ${account.status.toUpperCase()}`, doc.page.width - 240, 192, { align: 'right' });
+
+    // Summary Box
+    doc.rect(40, 215, doc.page.width - 80, 50).fill('#f8fafc');
+    doc.rect(40, 215, doc.page.width - 80, 50).stroke('#e2e8f0');
+
+    doc.fillColor('#475569').fontSize(8).font('Helvetica-Bold');
+    doc.text('OPENING BALANCE', 55, 227);
+    doc.text('TOTAL DEBITS', 185, 227);
+    doc.text('TOTAL CREDITS', 315, 227);
+    doc.text('CLOSING BALANCE', 445, 227);
+
+    doc.fillColor('#0f172a').fontSize(11).font('Helvetica-Bold');
+    doc.text(`₹${openingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, 55, 242);
+    doc.fillColor('#ef4444').text(`₹${totalDebits.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, 185, 242);
+    doc.fillColor('#10b981').text(`₹${totalCredits.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, 315, 242);
+    doc.fillColor('#3b82f6').text(`₹${Number(account.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, 445, 242);
+
+    // Transaction History Table
+    doc.fillColor('#0f172a').fontSize(11).font('Helvetica-Bold').text('Transaction History Detail', 40, 285);
+    doc.moveTo(40, 298).lineTo(doc.page.width - 40, 298).stroke('#cbd5e1');
+
+    // Table Header Row
+    let tableY = 305;
+    doc.rect(40, tableY, doc.page.width - 80, 20).fill('#0f172a');
+    doc.fill('#ffffff').fontSize(8).font('Helvetica-Bold');
+    doc.text('Date', 45, tableY + 6);
+    doc.text('Particulars / Description', 110, tableY + 6);
+    doc.text('Reference No.', 270, tableY + 6);
+    doc.text('Debit (₹)', 365, tableY + 6, { width: 55, align: 'right' });
+    doc.text('Credit (₹)', 430, tableY + 6, { width: 55, align: 'right' });
+    doc.text('Balance (₹)', 495, tableY + 6, { width: 55, align: 'right' });
 
     let runBalance = openingBalance;
-    let rowY = 332;
-    doc.fill('#000000').font('Helvetica').fontSize(8);
+    let rowY = 330;
+    doc.font('Helvetica').fontSize(8).fillColor('#334155');
 
     for (let i = 0; i < transactions.length; i++) {
       const tx = transactions[i];
@@ -2115,40 +2408,499 @@ export class AppController {
       if (isCredit) runBalance += Number(tx.amount);
       if (isDebit) runBalance -= Number(tx.amount);
 
-      if (i % 2 === 0) doc.rect(50, rowY - 4, 500, 18).fill('#f9f9f9');
-      doc.fill('#000000');
-      doc.text(new Date(tx.created_at).toLocaleDateString('en-IN'), 55, rowY);
-      doc.text((tx.description || tx.transaction_type).substring(0, 28), 130, rowY);
-      doc.text(tx.transaction_type.substring(0, 12), 310, rowY);
-      doc.text(isDebit ? Number(tx.amount).toFixed(2) : '-', 365, rowY);
-      doc.text(isCredit ? Number(tx.amount).toFixed(2) : '-', 430, rowY);
-      doc.text(runBalance.toFixed(2), 490, rowY);
+      if (rowY > doc.page.height - 100) {
+        addFooter(pageNumber);
+        doc.addPage();
+        pageNumber++;
+        tableY = 40;
+        doc.rect(40, tableY, doc.page.width - 80, 20).fill('#0f172a');
+        doc.fill('#ffffff').fontSize(8).font('Helvetica-Bold');
+        doc.text('Date', 45, tableY + 6);
+        doc.text('Particulars / Description', 110, tableY + 6);
+        doc.text('Reference No.', 270, tableY + 6);
+        doc.text('Debit (₹)', 365, tableY + 6, { width: 55, align: 'right' });
+        doc.text('Credit (₹)', 430, tableY + 6, { width: 55, align: 'right' });
+        doc.text('Balance (₹)', 495, tableY + 6, { width: 55, align: 'right' });
+        rowY = 65;
+      }
+
+      if (i % 2 === 0) doc.rect(40, rowY - 4, doc.page.width - 80, 18).fill('#f8fafc');
+      doc.fillColor('#334155');
+      doc.text(new Date(tx.created_at).toLocaleDateString('en-IN'), 45, rowY);
+      doc.text((tx.description || tx.transaction_type).substring(0, 32), 110, rowY);
+      doc.text(tx.reference_number.slice(0, 18).toUpperCase(), 270, rowY);
+      doc.text(isDebit ? Number(tx.amount).toFixed(2) : '—', 365, rowY, { width: 55, align: 'right' });
+      doc.text(isCredit ? Number(tx.amount).toFixed(2) : '—', 430, rowY, { width: 55, align: 'right' });
+      doc.text(runBalance.toFixed(2), 495, rowY, { width: 55, align: 'right' });
 
       rowY += 18;
-      if (rowY > doc.page.height - 100) {
+    }
+
+    addFooter(pageNumber);
+    doc.end();
+  }
+
+  @Get('accounts/:id/passbook/pdf')
+  async generatePassbook(
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    const account = await this.prisma.account.findUnique({
+      where: { id },
+      include: { user: true, branch: true },
+    });
+    if (!account) throw new NotFoundException('Account not found');
+
+    const transactions = await this.prisma.transaction.findMany({
+      where: { OR: [{ from_account_id: id }, { to_account_id: id }] },
+      orderBy: { created_at: 'asc' },
+    });
+
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="passbook_${account.account_number}.pdf"`);
+    doc.pipe(res);
+
+    // Decorative Borders
+    doc.rect(20, 20, doc.page.width - 40, doc.page.height - 40).stroke('#cbd5e1');
+
+    doc.rect(40, 40, doc.page.width - 80, 100).fill('#0f172a');
+    doc.rect(40, 40, doc.page.width - 80, 100).stroke('#3b82f6');
+
+    doc.fill('#ffffff').fontSize(22).font('Helvetica-Bold').text('COREBANK PASSBOOK', 60, 60);
+    doc.fontSize(8).font('Helvetica').fillColor('#cbd5e1').text(`PASSBOOK NO: PB-${account.account_number.slice(0,5)}-${account.id.slice(0,4).toUpperCase()}`, 60, 88);
+    doc.fontSize(10).fillColor('#ffffff').text(`Branch: ${account.branch?.name || 'Mumbai Main'} (${account.branch?.code || 'MUM001'})`, 60, 108);
+
+    const infoY = 160;
+    doc.fillColor('#0f172a').fontSize(12).font('Helvetica-Bold').text('Customer Details', 40, infoY);
+    doc.moveTo(40, infoY + 14).lineTo(doc.page.width - 40, infoY + 14).stroke('#cbd5e1');
+
+    doc.font('Helvetica').fontSize(10).fillColor('#334155');
+    doc.text(`Customer Name: ${account.user.first_name} ${account.user.last_name}`, 40, infoY + 24);
+    doc.text(`Customer ID: ${account.user.id.slice(0, 8).toUpperCase()}`, 40, infoY + 38);
+    doc.text(`Contact: ${account.user.phone_number || 'N/A'}`, 40, infoY + 52);
+
+    doc.text(`Account No: ${account.account_number}`, 320, infoY + 24);
+    doc.text(`Account Type: ${account.account_type.toUpperCase()}`, 320, infoY + 38);
+    doc.text(`Issued Date: ${new Date().toLocaleDateString('en-IN')}`, 320, infoY + 52);
+
+    doc.fillColor('#0f172a').fontSize(12).font('Helvetica-Bold').text('Transaction Log Ledger', 40, infoY + 80);
+    doc.moveTo(40, infoY + 94).lineTo(doc.page.width - 40, infoY + 94).stroke('#cbd5e1');
+
+    let tableY = infoY + 105;
+    doc.rect(40, tableY, doc.page.width - 80, 20).fill('#334155');
+    doc.fill('#ffffff').fontSize(8).font('Helvetica-Bold');
+    doc.text('Date', 45, tableY + 6);
+    doc.text('Particulars / Reference', 110, tableY + 6);
+    doc.text('Withdrawal / Debit (₹)', 280, tableY + 6, { width: 80, align: 'right' });
+    doc.text('Deposit / Credit (₹)', 370, tableY + 6, { width: 80, align: 'right' });
+    doc.text('Balance (₹)', 465, tableY + 6, { width: 80, align: 'right' });
+
+    let runBalance = 0;
+    let rowY = tableY + 26;
+    doc.font('Helvetica').fontSize(8).fillColor('#000000');
+
+    for (let i = 0; i < transactions.length; i++) {
+      const tx = transactions[i];
+      const isCredit = tx.to_account_id === id;
+      const isDebit = tx.from_account_id === id;
+
+      if (isCredit) runBalance += Number(tx.amount);
+      if (isDebit) runBalance -= Number(tx.amount);
+
+      if (rowY > doc.page.height - 80) {
         doc.addPage();
-        rowY = 50;
+        doc.rect(20, 20, doc.page.width - 40, doc.page.height - 40).stroke('#cbd5e1');
+        tableY = 40;
+        doc.rect(40, tableY, doc.page.width - 80, 20).fill('#334155');
+        doc.fill('#ffffff').fontSize(8).font('Helvetica-Bold');
+        doc.text('Date', 45, tableY + 6);
+        doc.text('Particulars / Reference', 110, tableY + 6);
+        doc.text('Withdrawal / Debit (₹)', 280, tableY + 6, { width: 80, align: 'right' });
+        doc.text('Deposit / Credit (₹)', 370, tableY + 6, { width: 80, align: 'right' });
+        doc.text('Balance (₹)', 465, tableY + 6, { width: 80, align: 'right' });
+        rowY = 65;
+      }
+
+      if (i % 2 === 0) doc.rect(40, rowY - 4, doc.page.width - 80, 18).fill('#f8fafc');
+      doc.fillColor('#000000');
+      doc.text(new Date(tx.created_at).toLocaleDateString('en-IN'), 45, rowY);
+      doc.text(`${tx.description || tx.transaction_type} (${tx.reference_number.slice(0, 6).toUpperCase()})`, 110, rowY);
+      doc.text(isDebit ? Number(tx.amount).toFixed(2) : '—', 280, rowY, { width: 80, align: 'right' });
+      doc.text(isCredit ? Number(tx.amount).toFixed(2) : '—', 370, rowY, { width: 80, align: 'right' });
+      doc.text(runBalance.toFixed(2), 465, rowY, { width: 80, align: 'right' });
+
+      rowY += 18;
+    }
+
+    doc.end();
+  }
+
+  @Get('transactions/:id/receipt/pdf')
+  async generateReceipt(
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id },
+      include: {
+        from_account: { include: { user: true, branch: true } },
+        to_account: { include: { user: true, branch: true } },
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+
+    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="receipt_${tx.reference_number}.pdf"`);
+    doc.pipe(res);
+
+    doc.rect(30, 30, doc.page.width - 60, doc.page.height - 60).stroke('#cbd5e1');
+
+    doc.rect(40, 40, doc.page.width - 80, 80).fill('#0f172a');
+    doc.fill('#ffffff').fontSize(22).font('Helvetica-Bold').text('COREBANK RECEIPT', 60, 55);
+    doc.fontSize(9).font('Helvetica').fillColor('#cbd5e1').text('OFFICIAL TRANSACTION RECEIPT', 60, 85);
+
+    const activeAccount = tx.to_account || tx.from_account;
+    const branchName = activeAccount?.branch?.name || 'CoreBank Main Branch';
+
+    doc.fillColor('#0f172a').fontSize(12).font('Helvetica-Bold').text('Transaction Summary', 50, 150);
+    doc.moveTo(50, 164).lineTo(doc.page.width - 50, 164).stroke('#e2e8f0');
+
+    doc.font('Helvetica').fontSize(10).fillColor('#475569');
+    let detailsY = 175;
+    const drawRow = (label: string, value: string) => {
+      doc.fillColor('#475569').text(label, 50, detailsY);
+      doc.fillColor('#0f172a').font('Helvetica-Bold').text(value, 200, detailsY);
+      doc.font('Helvetica');
+      detailsY += 24;
+    };
+
+    drawRow('Receipt Number', `REC-${tx.reference_number.slice(0, 8).toUpperCase()}`);
+    drawRow('Transaction Reference', tx.reference_number.toUpperCase());
+    drawRow('Transaction Type', tx.transaction_type.toUpperCase());
+    drawRow('Channel', tx.channel.toUpperCase());
+    drawRow('Date & Time', new Date(tx.created_at).toLocaleString('en-IN'));
+    drawRow('Branch Name', branchName);
+
+    if (tx.from_account) {
+      drawRow('Debited From Account', `${tx.from_account.account_number} (${tx.from_account.user.first_name} ${tx.from_account.user.last_name})`);
+    }
+    if (tx.to_account) {
+      drawRow('Credited To Account', `${tx.to_account.account_number} (${tx.to_account.user.first_name} ${tx.to_account.user.last_name})`);
+    }
+
+    drawRow('Status', tx.status.toUpperCase());
+    drawRow('Teller ID / Authorizer', tx.performed_by || 'CBS System');
+
+    doc.rect(50, detailsY + 10, doc.page.width - 100, 50).fill('#f8fafc');
+    doc.rect(50, detailsY + 10, doc.page.width - 100, 50).stroke('#3b82f6');
+    doc.fillColor('#0f172a').fontSize(12).font('Helvetica-Bold').text('TRANSACTION AMOUNT', 65, detailsY + 20);
+    doc.fillColor('#2563eb').fontSize(18).font('Helvetica-Bold').text(`₹${Number(tx.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, 65, detailsY + 35);
+
+    doc.fillColor('#666666').fontSize(8).font('Helvetica');
+    doc.text('Thank you for banking with CoreBank. This document is a valid receipt of cash/transfer transaction.', 50, doc.page.height - 80, { width: 500, align: 'center' });
+    doc.text('Subject to bank validation rules and terms of business.', 50, doc.page.height - 65, { width: 500, align: 'center' });
+
+    doc.end();
+  }
+
+  // ─── Standing Instructions (Scheduled Payments) ────────────────────────────
+  @Post('accounts/scheduled-payments')
+  async createScheduledPayment(@Body() body: any) {
+    const { amount, frequency, next_run, account_id, to_account_num, description } = body;
+    if (!account_id || !to_account_num || !amount || !next_run) {
+      throw new BadRequestException('account_id, to_account_num, amount, and next_run are required');
+    }
+    const payment = await this.prisma.scheduledPayment.create({
+      data: {
+        amount: parseFloat(amount),
+        frequency: frequency || 'monthly',
+        next_run: new Date(next_run),
+        account_id,
+        to_account_num,
+        description: description || 'Standing Instruction',
+        is_active: true,
+      },
+    });
+    const account = await this.prisma.account.findUnique({ where: { id: account_id } });
+    if (account) {
+      await audit(this.prisma, {
+        user_id: account.user_id,
+        role: 'customer',
+        action: `Standing Instruction created: ₹${parseFloat(amount)} to ${to_account_num} (${frequency})`,
+        module: 'scheduled_payments',
+      });
+    }
+    return { message: 'Standing Instruction created successfully.', payment };
+  }
+
+  @Get('accounts/scheduled-payments')
+  async getScheduledPayments(@Query('account_id') account_id?: string, @Query('user_id') user_id?: string) {
+    const where: any = { is_active: true };
+    if (account_id) {
+      where.account_id = account_id;
+    } else if (user_id) {
+      const userAccounts = await this.prisma.account.findMany({ where: { user_id }, select: { id: true } });
+      where.account_id = { in: userAccounts.map(a => a.id) };
+    }
+    return this.prisma.scheduledPayment.findMany({
+      where,
+      include: { account: { select: { account_number: true } } },
+      orderBy: { next_run: 'asc' },
+    });
+  }
+
+  @Patch('accounts/scheduled-payments/:id/cancel')
+  async cancelScheduledPayment(@Param('id') id: string, @Body() body: any) {
+    const payment = await this.prisma.scheduledPayment.update({
+      where: { id },
+      data: { is_active: false },
+    });
+    return { message: 'Standing Instruction cancelled successfully.', payment };
+  }
+
+  // ─── End-Of-Day (EOD) & System Batch Processing ────────────────────────────
+  @Post('system/process-eod')
+  async processEOD(@Body() body: any) {
+    const { performed_by } = body;
+    const now = new Date();
+
+    // 1. Process Scheduled Payments (Standing Instructions)
+    const duePayments = await this.prisma.scheduledPayment.findMany({
+      where: {
+        is_active: true,
+        next_run: { lte: now },
+      },
+      include: { account: true },
+    });
+
+    let executedCount = 0;
+    for (const payment of duePayments) {
+      const amt = Number(payment.amount);
+      const fromAcc = payment.account;
+      if (fromAcc && Number(fromAcc.balance) >= amt && fromAcc.status === 'active') {
+        const toAcc = await this.prisma.account.findUnique({
+          where: { account_number: payment.to_account_num },
+        });
+        
+        if (toAcc && toAcc.status === 'active') {
+          await this.prisma.$transaction(async (txClient) => {
+            await txClient.account.update({
+              where: { id: fromAcc.id },
+              data: { balance: { decrement: amt } },
+            });
+            await txClient.account.update({
+              where: { id: toAcc.id },
+              data: { balance: { increment: amt } },
+            });
+            await txClient.transaction.create({
+              data: {
+                amount: amt,
+                transaction_type: 'transfer',
+                description: payment.description || 'Standing Instruction Payment',
+                from_account_id: fromAcc.id,
+                to_account_id: toAcc.id,
+                status: 'success',
+                channel: 'system',
+              },
+            });
+            
+            // Calculate next run date
+            let nextRun = new Date(payment.next_run);
+            if (payment.frequency === 'daily') nextRun.setDate(nextRun.getDate() + 1);
+            else if (payment.frequency === 'weekly') nextRun.setDate(nextRun.getDate() + 7);
+            else nextRun.setMonth(nextRun.getMonth() + 1); // monthly
+
+            await txClient.scheduledPayment.update({
+              where: { id: payment.id },
+              data: { next_run: nextRun },
+            });
+          });
+          executedCount++;
+        }
       }
     }
 
-    // ── Closing Balance ──────────────────────────────────────────────────────
-    doc.moveTo(50, rowY + 5).lineTo(550, rowY + 5).stroke('#1e3a5f');
-    doc.rect(50, rowY + 10, 500, 25).fill('#e8f0fe');
-    doc.fill('#1e3a5f').fontSize(10).font('Helvetica-Bold');
-    doc.text('Closing Balance:', 55, rowY + 17);
-    doc.text(`₹${Number(account.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, 450, rowY + 17);
+    // 2. Interest Calculation (Credit 3.5% annual rate monthly for savings accounts)
+    const savingsAccounts = await this.prisma.account.findMany({
+      where: { account_type: 'savings', status: 'active', balance: { gt: 0 } },
+    });
 
-    // ── Footer ───────────────────────────────────────────────────────────────
-    doc.fill('#666666').fontSize(8).font('Helvetica');
-    doc.text(
-      'This is a computer-generated statement and does not require a signature. For queries, contact your branch or helpline 1800-200-3456.',
-      50, doc.page.height - 60, { width: 500, align: 'center' },
-    );
-    doc.text(
-      `CoreBank Ltd. | IFSC: CRBN0001001 | ${account.branch?.name || 'Head Office'}`,
-      50, doc.page.height - 40, { width: 500, align: 'center' },
-    );
+    let interestCount = 0;
+    for (const acc of savingsAccounts) {
+      const rate = Number(acc.interest_rate || 3.5);
+      const monthlyRate = rate / 12 / 100;
+      const interestAmount = Math.round(Number(acc.balance) * monthlyRate * 100) / 100;
 
-    doc.end();
+      if (interestAmount > 0.01) {
+        await this.prisma.$transaction(async (txClient) => {
+          await txClient.account.update({
+            where: { id: acc.id },
+            data: { balance: { increment: interestAmount } },
+          });
+          await txClient.transaction.create({
+            data: {
+              amount: interestAmount,
+              transaction_type: 'deposit',
+              description: 'Monthly Savings Interest Credit',
+              to_account_id: acc.id,
+              status: 'success',
+              channel: 'system',
+            },
+          });
+        });
+        interestCount++;
+      }
+    }
+
+    // 3. Process FD/RD Maturities
+    const maturedFDs = await this.prisma.account.findMany({
+      where: {
+        account_type: 'fd',
+        status: 'active',
+        fd_maturity_date: { lte: now },
+      },
+    });
+
+    let fdMaturedCount = 0;
+    for (const fd of maturedFDs) {
+      const mainAccount = await this.prisma.account.findFirst({
+        where: { user_id: fd.user_id, account_type: 'savings', status: 'active' },
+      });
+      if (mainAccount) {
+        const maturityAmt = Number(fd.balance);
+        await this.prisma.$transaction(async (txClient) => {
+          await txClient.account.update({
+            where: { id: mainAccount.id },
+            data: { balance: { increment: maturityAmt } },
+          });
+          await txClient.account.update({
+            where: { id: fd.id },
+            data: { balance: 0, status: 'closed' },
+          });
+          await txClient.transaction.create({
+            data: {
+              amount: maturityAmt,
+              transaction_type: 'deposit',
+              description: `FD Maturity Credit: A/C ${fd.account_number}`,
+              from_account_id: fd.id,
+              to_account_id: mainAccount.id,
+              status: 'success',
+              channel: 'system',
+            },
+          });
+        });
+        fdMaturedCount++;
+      }
+    }
+
+    // 4. Charges & Fees (Charge flat ₹150 monthly account maintenance fee for accounts below minimum balance)
+    const lowBalanceAccounts = await this.prisma.account.findMany({
+      where: {
+        status: 'active',
+        account_type: { in: ['savings', 'current'] },
+      },
+    });
+
+    let chargesCount = 0;
+    for (const acc of lowBalanceAccounts) {
+      const balance = Number(acc.balance);
+      const minBal = Number(acc.minimum_balance || 1000);
+      if (balance < minBal && balance >= 150) {
+        await this.prisma.$transaction(async (txClient) => {
+          await txClient.account.update({
+            where: { id: acc.id },
+            data: { balance: { decrement: 150 } },
+          });
+          await txClient.transaction.create({
+            data: {
+              amount: 150,
+              transaction_type: 'withdrawal',
+              description: 'Below Minimum Balance Charge',
+              from_account_id: acc.id,
+              status: 'success',
+              channel: 'system',
+            },
+          });
+        });
+        chargesCount++;
+      }
+    }
+
+    await audit(this.prisma, {
+      user_id: performed_by,
+      role: 'super_admin',
+      action: `EOD Processing Executed: ${executedCount} standing instructions, ${interestCount} interest credits, ${fdMaturedCount} FDs matured, ${chargesCount} charges applied`,
+      module: 'system',
+    });
+
+    return {
+      success: true,
+      message: 'End-of-Day operations processed successfully.',
+      details: {
+        standing_instructions_executed: executedCount,
+        interest_credits: interestCount,
+        fd_matured: fdMaturedCount,
+        charges_applied: chargesCount,
+      },
+    };
+  }
+
+  // ─── Profile & Settings ────────────────────────────────────────────────────
+  @Patch('auth/profile')
+  async updateProfile(@Body() body: any) {
+    const { id, phone_number, address, city, pincode } = body;
+    if (!id) throw new BadRequestException('User ID is required');
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id },
+      data: {
+        ...(phone_number && { phone_number }),
+        ...(address !== undefined && { address }),
+        ...(city && { city }),
+        ...(pincode !== undefined && { pincode }),
+      },
+    });
+
+    await audit(this.prisma, {
+      user_id: id,
+      role: updatedUser.role,
+      action: 'Profile information updated via NetBanking settings',
+      module: 'settings',
+    });
+
+    return { message: 'Profile updated successfully.', user: updatedUser };
+  }
+
+  @Post('auth/change-password')
+  async changePassword(@Body() body: any) {
+    const { user_id, current_password, new_password } = body;
+    if (!user_id || !current_password || !new_password) {
+      throw new BadRequestException('user_id, current_password, and new_password are required');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: user_id } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const isMatch = await bcrypt.compare(current_password, user.password_hash);
+    if (!isMatch) throw new BadRequestException('Incorrect current password');
+
+    const salt = await bcrypt.genSalt(12);
+    const password_hash = await bcrypt.hash(new_password, salt);
+
+    await this.prisma.user.update({
+      where: { id: user_id },
+      data: { password_hash },
+    });
+
+    await audit(this.prisma, {
+      user_id,
+      role: user.role,
+      action: 'Password changed successfully',
+      module: 'settings',
+    });
+
+    return { message: 'Password updated successfully.' };
   }
 }

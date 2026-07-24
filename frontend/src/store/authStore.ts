@@ -10,6 +10,10 @@ interface User {
   first_name: string;
   last_name: string;
   branch_id?: string;
+  phone_number?: string;
+  address?: string;
+  city?: string;
+  pincode?: string;
 }
 
 interface AuthState {

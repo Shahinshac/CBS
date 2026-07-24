@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { accountAPI, transactionAPI, cardAPI, loanAPI, notificationAPI, beneficiaryAPI, billAPI } from '../services/api';
+import { accountAPI, transactionAPI, cardAPI, loanAPI, notificationAPI, beneficiaryAPI, billAPI, scheduledPaymentAPI, authAPI } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import {
   IndianRupee, CreditCard, Send, BookOpen, Bell, TrendingUp,
   Loader2, CheckCircle2, AlertCircle, Eye, EyeOff, History,
-  Plus, Users, Receipt, FileDown, Trash2, ArrowUpRight, ArrowDownLeft
+  Plus, Users, Receipt, FileDown, Trash2, ArrowUpRight, ArrowDownLeft,
+  Clock, Settings, Book, Printer
 } from 'lucide-react';
 
 const TX_TYPE_STYLE: Record<string, { label: string; color: string }> = {
@@ -20,9 +21,30 @@ export const NetBanking = () => {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeSection, setActiveSection] = useState<'dashboard' | 'transfer' | 'fdrd' | 'cards' | 'loans' | 'history' | 'beneficiaries' | 'bills' | 'statement'>('dashboard');
+  const [activeSection, setActiveSection] = useState<'dashboard' | 'transfer' | 'fdrd' | 'cards' | 'loans' | 'history' | 'beneficiaries' | 'bills' | 'statement' | 'standing-instructions' | 'passbook' | 'settings'>('dashboard');
   const [showBalance, setShowBalance] = useState(true);
   const [selectedAccountId, setSelectedAccountId] = useState('');
+
+  // Standing Instructions State
+  const [scheduledPayments, setScheduledPayments] = useState<any[]>([]);
+  const [spAmount, setSpAmount] = useState('');
+  const [spToAccount, setSpToAccount] = useState('');
+  const [spFrequency, setSpFrequency] = useState('monthly');
+  const [spNextRun, setSpNextRun] = useState('');
+  const [spDesc, setSpDesc] = useState('');
+  const [spStatus, setSpStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [spLoading, setSpLoading] = useState(false);
+
+  // Settings / Profile State
+  const [prefPhone, setPrefPhone] = useState(user?.phone_number || '');
+  const [prefAddress, setPrefAddress] = useState(user?.address || '');
+  const [prefCity, setPrefCity] = useState(user?.city || '');
+  const [prefPincode, setPrefPincode] = useState(user?.pincode || '');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [settingsStatus, setSettingsStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [passwordStatus, setPasswordStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Transfer State
   const [toAccountNum, setToAccountNum] = useState('');
@@ -122,6 +144,91 @@ export const NetBanking = () => {
       const res = await billAPI.getAll(selectedAccountId);
       setBills(Array.isArray(res.data) ? res.data : []);
     } catch { setBills([]); }
+  };
+
+  const fetchScheduledPayments = async () => {
+    if (!user?.id) return;
+    try {
+      const res = await scheduledPaymentAPI.getAll({ user_id: user.id });
+      setScheduledPayments(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      setScheduledPayments([]);
+    }
+  };
+
+  const handleCreateScheduledPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedAccountId || !spToAccount || !spAmount || !spNextRun) return;
+    setSpLoading(true);
+    setSpStatus(null);
+    try {
+      await scheduledPaymentAPI.create({
+        account_id: selectedAccountId,
+        to_account_num: spToAccount,
+        amount: parseFloat(spAmount),
+        frequency: spFrequency,
+        next_run: spNextRun,
+        description: spDesc || 'Standing Instruction',
+      });
+      setSpStatus({ type: 'success', message: 'Standing Instruction created successfully.' });
+      setSpAmount('');
+      setSpToAccount('');
+      setSpDesc('');
+      setSpNextRun('');
+      fetchScheduledPayments();
+      fetchAll();
+    } catch (err: any) {
+      setSpStatus({ type: 'error', message: err.response?.data?.message || 'Failed to create instruction.' });
+    } finally {
+      setSpLoading(false);
+    }
+  };
+
+  const handleCancelScheduledPayment = async (id: string) => {
+    if (!confirm('Cancel this Standing Instruction?')) return;
+    try {
+      await scheduledPaymentAPI.cancel(id);
+      fetchScheduledPayments();
+    } catch {}
+  };
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSettingsStatus(null);
+    try {
+      await authAPI.updateProfile({
+        id: user?.id,
+        phone_number: prefPhone,
+        address: prefAddress,
+        city: prefCity,
+        pincode: prefPincode,
+      });
+      setSettingsStatus({ type: 'success', message: 'Profile updated successfully.' });
+    } catch (err: any) {
+      setSettingsStatus({ type: 'error', message: err.response?.data?.message || 'Failed to update profile.' });
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordStatus(null);
+    if (newPassword !== confirmPassword) {
+      setPasswordStatus({ type: 'error', message: 'New passwords do not match.' });
+      return;
+    }
+    try {
+      await authAPI.changePassword({
+        user_id: user?.id,
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+      setPasswordStatus({ type: 'success', message: 'Password updated successfully.' });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      setPasswordStatus({ type: 'error', message: err.response?.data?.message || 'Failed to change password.' });
+    }
   };
 
   const handleAddBeneficiary = async (e: React.FormEvent) => {
@@ -236,6 +343,9 @@ export const NetBanking = () => {
     { id: 'loans', label: 'My Loans', icon: BookOpen },
     { id: 'history', label: 'History', icon: History },
     { id: 'statement', label: 'Statement', icon: FileDown },
+    { id: 'standing-instructions', label: 'Standing Instructions', icon: Clock, onLoad: fetchScheduledPayments },
+    { id: 'passbook', label: 'Passbook', icon: Book },
+    { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   if (loading) {
@@ -767,6 +877,252 @@ export const NetBanking = () => {
               <FileDown className="w-4 h-4" /> Download PDF Statement
             </button>
             <p className="text-xs text-slate-500 text-center">The statement will include all transactions in the selected period with opening and closing balances.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Standing Instructions (Scheduled Payments) */}
+      {activeSection === 'standing-instructions' && (
+        <div className="space-y-5">
+          {spStatus && (
+            <div className={`p-3 rounded-lg text-sm font-medium ${spStatus.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+              {spStatus.message}
+            </div>
+          )}
+
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+            <h2 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <Clock className="w-5 h-5 text-blue-600" /> Create Standing Instruction
+            </h2>
+            <form onSubmit={handleCreateScheduledPayment} className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">Source Account</label>
+                <select className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={selectedAccountId} onChange={e => setSelectedAccountId(e.target.value)}>
+                  {accounts.map(a => <option key={a.id} value={a.id}>{a.account_number} (₹{parseFloat(a.balance).toLocaleString('en-IN')})</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">Destination Account Number</label>
+                <input className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={spToAccount} onChange={e => setSpToAccount(e.target.value)} required placeholder="e.g. 1000293847" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">Amount (₹)</label>
+                <input type="number" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={spAmount} onChange={e => setSpAmount(e.target.value)} required placeholder="Amount in ₹" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">Frequency</label>
+                <select className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={spFrequency} onChange={e => setSpFrequency(e.target.value)}>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">Next Payment Date</label>
+                <input type="date" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={spNextRun} onChange={e => setSpNextRun(e.target.value)} required />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">Description</label>
+                <input className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={spDesc} onChange={e => setSpDesc(e.target.value)} placeholder="Standing instruction remark" />
+              </div>
+              <div className="col-span-2">
+                <button type="submit" disabled={spLoading} className="px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-60">
+                  {spLoading ? 'Setting instruction...' : 'Set Standing Instruction'}
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+            <div className="p-5 border-b border-slate-200">
+              <h2 className="text-base font-bold text-slate-900">Active Instructions ({scheduledPayments.length})</h2>
+            </div>
+            {scheduledPayments.length === 0 ? (
+              <div className="p-10 text-center text-slate-400">
+                <Clock className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">No standing instructions active</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-500 text-xs font-bold uppercase border-b border-slate-200">
+                      <th className="px-5 py-3">Source Account</th>
+                      <th className="px-5 py-3">To Account</th>
+                      <th className="px-5 py-3">Frequency</th>
+                      <th className="px-5 py-3">Amount</th>
+                      <th className="px-5 py-3">Next Execution</th>
+                      <th className="px-5 py-3">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {scheduledPayments.map((sp: any) => (
+                      <tr key={sp.id} className="hover:bg-slate-50">
+                        <td className="px-5 py-3 font-semibold text-slate-700">{sp.account?.account_number}</td>
+                        <td className="px-5 py-3 text-slate-600">{sp.to_account_num}</td>
+                        <td className="px-5 py-3 text-slate-600 capitalize">{sp.frequency}</td>
+                        <td className="px-5 py-3 font-bold text-slate-900">₹{parseFloat(sp.amount).toLocaleString('en-IN')}</td>
+                        <td className="px-5 py-3 text-slate-500">{new Date(sp.next_run).toLocaleDateString('en-IN')}</td>
+                        <td className="px-5 py-3">
+                          <button onClick={() => handleCancelScheduledPayment(sp.id)} className="p-1 px-3 text-xs bg-red-50 text-red-600 border border-red-100 hover:bg-red-100 rounded font-semibold transition-colors">
+                            Cancel
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Passbook */}
+      {activeSection === 'passbook' && (
+        <div className="space-y-5">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Book className="w-5 h-5 text-blue-600" /> Digital Passbook
+              </h2>
+              <div className="flex items-center gap-4">
+                {selectedAccountId && (
+                  <a
+                    href={accountAPI.getPassbook(selectedAccountId)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-lg flex items-center gap-1.5 transition shadow-sm"
+                  >
+                    <Printer className="w-3.5 h-3.5" /> Download Passbook (PDF)
+                  </a>
+                )}
+                <div className="w-64">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Select Account</label>
+                  <select className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={selectedAccountId} onChange={e => setSelectedAccountId(e.target.value)}>
+                    {accounts.map(a => <option key={a.id} value={a.id}>{a.account_number} ({a.account_type})</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 overflow-x-auto">
+              <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr className="bg-slate-900 text-white text-xs font-bold uppercase tracking-wider">
+                    <th className="px-5 py-3 rounded-tl-lg">Date</th>
+                    <th className="px-5 py-3">Particulars / Description</th>
+                    <th className="px-5 py-3">Debit (₹)</th>
+                    <th className="px-5 py-3">Credit (₹)</th>
+                    <th className="px-5 py-3 rounded-tr-lg">Running Balance (₹)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {(() => {
+                    const activeAccount = accounts.find(a => a.id === selectedAccountId);
+                    let runningBal = parseFloat(activeAccount?.balance || 0);
+                    const list = transactions
+                      .filter(t => t.from_account_id === selectedAccountId || t.to_account_id === selectedAccountId)
+                      .map((tx) => {
+                        const current = runningBal;
+                        const isCredit = tx.to_account_id === selectedAccountId;
+                        if (isCredit) {
+                          runningBal -= parseFloat(tx.amount);
+                        } else {
+                          runningBal += parseFloat(tx.amount);
+                        }
+                        return { ...tx, currentRunning: current };
+                      });
+
+                    if (list.length === 0) {
+                      return <tr><td colSpan={5} className="px-5 py-8 text-center text-slate-400">No transactions recorded in passbook.</td></tr>;
+                    }
+
+                    return list.map((tx: any) => {
+                      const isCredit = tx.to_account_id === selectedAccountId;
+                      return (
+                        <tr key={tx.id} className="hover:bg-slate-50 font-medium">
+                          <td className="px-5 py-4 text-xs text-slate-500">{new Date(tx.created_at).toLocaleDateString('en-IN')}</td>
+                          <td className="px-5 py-4 text-slate-700">{tx.description || tx.transaction_type}</td>
+                          <td className="px-5 py-4 text-red-600 font-bold">{!isCredit ? `₹${parseFloat(tx.amount).toLocaleString('en-IN')}` : '—'}</td>
+                          <td className="px-5 py-4 text-emerald-600 font-bold">{isCredit ? `₹${parseFloat(tx.amount).toLocaleString('en-IN')}` : '—'}</td>
+                          <td className="px-5 py-4 font-bold text-slate-900">₹{tx.currentRunning.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        </tr>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Profile & Settings */}
+      {activeSection === 'settings' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Profile Card */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
+              <Settings className="w-5 h-5 text-blue-600" /> Contact Details
+            </h2>
+            {settingsStatus && (
+              <div className={`p-3 rounded-lg text-sm ${settingsStatus.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                {settingsStatus.message}
+              </div>
+            )}
+            <form onSubmit={handleUpdateProfile} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Phone Number</label>
+                <input className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={prefPhone} onChange={e => setPrefPhone(e.target.value)} required />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Residential Address</label>
+                <textarea rows={3} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={prefAddress} onChange={e => setPrefAddress(e.target.value)} required />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">City</label>
+                  <input className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={prefCity} onChange={e => setPrefCity(e.target.value)} required />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Pincode</label>
+                  <input className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={prefPincode} onChange={e => setPrefPincode(e.target.value)} required />
+                </div>
+              </div>
+              <button type="submit" className="w-full py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 text-sm">
+                Save Contact Details
+              </button>
+            </form>
+          </div>
+
+          {/* Change Password Card */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
+              <Settings className="w-5 h-5 text-blue-600" /> Security Credentials
+            </h2>
+            {passwordStatus && (
+              <div className={`p-3 rounded-lg text-sm ${passwordStatus.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                {passwordStatus.message}
+              </div>
+            )}
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Current Password</label>
+                <input type="password" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} required />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">New Password</label>
+                <input type="password" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={newPassword} onChange={e => setNewPassword(e.target.value)} required />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Confirm New Password</label>
+                <input type="password" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required />
+              </div>
+              <button type="submit" className="w-full py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 text-sm">
+                Change Password
+              </button>
+            </form>
           </div>
         </div>
       )}

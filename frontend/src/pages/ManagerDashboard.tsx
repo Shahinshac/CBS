@@ -3,7 +3,7 @@ import {
   Users, CheckCircle, Activity, Loader2, Landmark,
   ArrowUpDown, RefreshCw, IndianRupee, FileCheck, Clock
 } from 'lucide-react';
-import { adminAPI, transactionAPI, loanAPI } from '../services/api';
+import { adminAPI, transactionAPI, loanAPI, accountAPI } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 
 export const ManagerDashboard = () => {
@@ -16,24 +16,74 @@ export const ManagerDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [loanMsg, setLoanMsg] = useState<{ id: string; type: 'success' | 'error'; text: string } | null>(null);
+  const [acctMsg, setAcctMsg] = useState<{ id: string; type: 'success' | 'error'; text: string } | null>(null);
+  const [pendingTx, setPendingTx] = useState<any[]>([]);
+  const [txAppMsg, setTxAppMsg] = useState<{ id: string; type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleAccountAction = async (accountId: string, action: 'approve' | 'reject') => {
+    setActionLoading(accountId);
+    setAcctMsg(null);
+    try {
+      if (action === 'approve') {
+        await accountAPI.approve(accountId, { approved_by: user?.id || '' });
+        setCustomers(prev => prev.map((c: any) => ({
+          ...c,
+          accounts: (c.accounts || []).map((a: any) => a.id === accountId ? { ...a, status: 'active' } : a)
+        })));
+        setAcctMsg({ id: accountId, type: 'success', text: 'Account approved successfully.' });
+      } else {
+        await accountAPI.update(accountId, { status: 'closed', updated_by: user?.id || '' });
+        setCustomers(prev => prev.map((c: any) => ({
+          ...c,
+          accounts: (c.accounts || []).map((a: any) => a.id === accountId ? { ...a, status: 'closed' } : a)
+        })));
+        setAcctMsg({ id: accountId, type: 'success', text: 'Account closed.' });
+      }
+    } catch {
+      setAcctMsg({ id: accountId, type: 'error', text: 'Failed to update account status.' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleTxApprovalAction = async (txId: string, action: 'approve' | 'reject') => {
+    setActionLoading(txId);
+    setTxAppMsg(null);
+    try {
+      if (action === 'approve') {
+        await transactionAPI.approve(txId, { approved_by: user?.id || '' });
+        setTxAppMsg({ id: txId, type: 'success', text: 'Transaction approved and executed.' });
+      } else {
+        await transactionAPI.reject(txId, { rejected_by: user?.id || '' });
+        setTxAppMsg({ id: txId, type: 'success', text: 'Transaction rejected.' });
+      }
+      setPendingTx(prev => prev.filter((t: any) => t.id !== txId));
+    } catch {
+      setTxAppMsg({ id: txId, type: 'error', text: 'Failed to process transaction approval.' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   useEffect(() => { fetchAll(); }, []);
 
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [customersRes, txRes, loansRes, statsRes, cashRes] = await Promise.all([
+      const [customersRes, txRes, loansRes, statsRes, cashRes, pendingTxRes] = await Promise.all([
         adminAPI.getCustomers(),
         transactionAPI.getAll({ limit: 15 }),
         loanAPI.getAll(),
         adminAPI.getStats(),
         adminAPI.getBranchCash(),
+        transactionAPI.getPending(),
       ]);
       setCustomers(customersRes.data.customers || []);
       setTransactions(txRes.data.transactions || []);
       setLoans(loansRes.data || []);
       setStats(statsRes.data);
       setBranchCash(cashRes.data);
+      setPendingTx(pendingTxRes.data.transactions || []);
     } catch {
       // partial failures are ok — show what we have
     } finally {
@@ -59,6 +109,14 @@ export const ManagerDashboard = () => {
   };
 
   const pendingLoans = loans.filter((l: any) => l.status === 'pending');
+  const pendingAccounts: any[] = [];
+  customers.forEach((c: any) => {
+    (c.accounts || []).forEach((a: any) => {
+      if (a.status === 'pending') {
+        pendingAccounts.push({ ...a, user: c });
+      }
+    });
+  });
   const activeCustomers = customers.filter(c => c.is_active).length;
   const totalBalance = stats?.total_deposits || 0;
 
@@ -212,6 +270,98 @@ export const ManagerDashboard = () => {
                         <button
                           onClick={() => handleLoanAction(loan.id, 'rejected')}
                           disabled={actionLoading === loan.id}
+                          className="flex-1 py-1.5 bg-red-100 text-red-700 text-xs font-semibold rounded hover:bg-red-200 cursor-pointer disabled:opacity-60 transition-colors"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Customer Account Approvals */}
+              <div className="premium-card overflow-hidden">
+                <div className="p-5 border-b border-slate-100 bg-slate-50/50">
+                  <h3 className="font-bold text-slate-900 flex items-center text-sm">
+                    <CheckCircle className="w-4 h-4 mr-2 text-blue-600" />
+                    Account Approvals ({pendingAccounts.length})
+                  </h3>
+                </div>
+                <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
+                  {pendingAccounts.length === 0 ? (
+                    <div className="p-6 text-center text-slate-400 text-sm">No pending accounts</div>
+                  ) : pendingAccounts.map((acc: any) => (
+                    <div key={acc.id} className="p-4">
+                      {acctMsg && acctMsg.id === acc.id && (
+                        <div className={`mb-2 text-xs p-2 rounded border font-medium ${acctMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
+                          {acctMsg.text}
+                        </div>
+                      )}
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <p className="font-semibold text-slate-900 text-sm">{acc.user?.first_name} {acc.user?.last_name}</p>
+                          <p className="text-xs text-slate-500 capitalize">{acc.account_type} Account</p>
+                        </div>
+                        <p className="font-mono text-slate-600 text-xs">{acc.account_number}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleAccountAction(acc.id, 'approve')}
+                          disabled={actionLoading === acc.id}
+                          className="flex-1 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded hover:bg-blue-700 cursor-pointer disabled:opacity-60 transition-colors"
+                        >
+                          {actionLoading === acc.id ? '...' : 'Approve'}
+                        </button>
+                        <button
+                          onClick={() => handleAccountAction(acc.id, 'reject')}
+                          disabled={actionLoading === acc.id}
+                          className="flex-1 py-1.5 bg-red-100 text-red-700 text-xs font-semibold rounded hover:bg-red-200 cursor-pointer disabled:opacity-60 transition-colors"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Pending High Value Transaction Approvals */}
+              <div className="premium-card overflow-hidden">
+                <div className="p-5 border-b border-slate-100 bg-slate-50/50">
+                  <h3 className="font-bold text-slate-900 flex items-center text-sm">
+                    <ArrowUpDown className="w-4 h-4 mr-2 text-blue-600" />
+                    Transaction Approvals ({pendingTx.length})
+                  </h3>
+                </div>
+                <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
+                  {pendingTx.length === 0 ? (
+                    <div className="p-6 text-center text-slate-400 text-sm">No pending transaction approvals</div>
+                  ) : pendingTx.map((t: any) => (
+                    <div key={t.id} className="p-4 text-xs">
+                      {txAppMsg && txAppMsg.id === t.id && (
+                        <div className={`mb-2 p-2 rounded border font-medium ${txAppMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
+                          {txAppMsg.text}
+                        </div>
+                      )}
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <p className="font-semibold text-slate-900 text-sm capitalize">{t.transaction_type}</p>
+                          <p className="text-slate-500">{t.description}</p>
+                        </div>
+                        <p className="font-bold text-slate-900 text-sm">₹{parseFloat(t.amount).toLocaleString('en-IN')}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleTxApprovalAction(t.id, 'approve')}
+                          disabled={actionLoading === t.id}
+                          className="flex-1 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded hover:bg-blue-700 cursor-pointer disabled:opacity-60 transition-colors"
+                        >
+                          {actionLoading === t.id ? '...' : 'Approve'}
+                        </button>
+                        <button
+                          onClick={() => handleTxApprovalAction(t.id, 'reject')}
+                          disabled={actionLoading === t.id}
                           className="flex-1 py-1.5 bg-red-100 text-red-700 text-xs font-semibold rounded hover:bg-red-200 cursor-pointer disabled:opacity-60 transition-colors"
                         >
                           Reject
