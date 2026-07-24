@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react';
 import { HelpCircle, MessageSquare, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
-import { ticketAPI } from '../services/api';
+import { ticketAPI, adminAPI } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 
 export const SupportTickets = () => {
   const { user } = useAuthStore();
   const [tickets, setTickets] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [targetUserId, setTargetUserId] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  // New Ticket Form State (only for customer persona, if needed. For support staff they manage it)
+  // New Ticket Form State
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState('medium');
@@ -19,6 +21,15 @@ export const SupportTickets = () => {
 
   useEffect(() => {
     fetchTickets();
+    if (user?.role !== 'customer') {
+      adminAPI.getCustomers().then(res => {
+        const custs = res.data.customers || [];
+        setCustomers(custs);
+        if (custs.length > 0) {
+          setTargetUserId(custs[0].id);
+        }
+      });
+    }
   }, []);
 
   const fetchTickets = async () => {
@@ -48,11 +59,12 @@ export const SupportTickets = () => {
 
   const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user?.id || !subject.trim()) return;
+    const finalUserId = user?.role === 'customer' ? user.id : targetUserId;
+    if (!finalUserId || !subject.trim()) return;
     setCreateMsg(null);
     try {
       await ticketAPI.create({
-        user_id: user.id,
+        user_id: finalUserId,
         subject,
         description,
         priority,
@@ -155,12 +167,12 @@ export const SupportTickets = () => {
           )}
         </div>
 
-        {/* Create Ticket Panel (for Customers) */}
+        {/* Create Ticket Panel */}
         <div className="space-y-6">
           <div className="premium-card p-5">
             <h2 className="text-base font-bold mb-4 text-slate-900 flex items-center">
               <MessageSquare className="w-4 h-4 mr-2 text-blue-600" />
-              Create Support Ticket
+              {user?.role === 'customer' ? 'Create Support Ticket' : 'File Ticket for Customer'}
             </h2>
             {createMsg && (
               <div className={`mb-3 text-xs p-2.5 rounded border font-medium flex items-center ${
@@ -171,6 +183,22 @@ export const SupportTickets = () => {
               </div>
             )}
             <form onSubmit={handleCreateTicket} className="space-y-4">
+              {user?.role !== 'customer' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-650 uppercase tracking-wider mb-1">Select Customer *</label>
+                  <select
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white text-slate-900 outline-none"
+                    value={targetUserId}
+                    onChange={e => setTargetUserId(e.target.value)}
+                  >
+                    {customers.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.first_name} {c.last_name} ({c.username})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-bold text-slate-650 uppercase tracking-wider mb-1">Subject *</label>
                 <input
