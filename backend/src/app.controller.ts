@@ -668,26 +668,58 @@ export class AppController {
       if (toAccount.status !== 'active') throw new BadRequestException('Destination account is not active');
     }
 
-    if (isHighValue) {
+    const isStaff = !!performed_by;
+    let requiresApproval = false;
+    let approvalReason = '';
+
+    if (isStaff) {
+      if (amt > 50000) {
+        requiresApproval = true;
+        approvalReason = 'Maker-Checker: Teller transaction exceeds ₹50,000 limit';
+      }
+    } else {
+      if (amt > 1000000) {
+        requiresApproval = true;
+        approvalReason = 'AML Flag: Single transaction exceeds ₹1,000,000 risk limit';
+      } else {
+        const todayStart = new Date(new Date().setHours(0, 0, 0, 0));
+        const todayTx = await this.prisma.transaction.findMany({
+          where: {
+            from_account_id: fromAccount.id,
+            transaction_type: 'transfer',
+            status: 'success',
+            created_at: { gte: todayStart },
+          },
+          select: { amount: true },
+        });
+        const todayTotal = todayTx.reduce((sum, t) => sum + Number(t.amount), 0);
+        if (todayTotal + amt > 200000) {
+          requiresApproval = true;
+          approvalReason = 'Daily Limit Exceeded: Cumulative transfers exceed ₹200,000 daily limit';
+        }
+      }
+    }
+
+    if (requiresApproval) {
       const tx = await this.prisma.transaction.create({
         data: {
           amount: amt,
           transaction_type: 'transfer',
-          description: (description || `Transfer to ${to_recipient_name || to_account_id}`) + ' (Pending Manager Approval)',
+          description: (description || `Transfer to ${to_recipient_name || to_account_id}`) + ` (${approvalReason})`,
           from_account_id: fromAccount.id,
           to_account_id: isExternal ? null : toAccount.id,
           status: 'pending_approval',
-          channel: channel || 'net_banking',
+          channel: channel || (isStaff ? 'branch' : 'net_banking'),
           performed_by: performed_by || null,
         },
       });
       await audit(this.prisma, {
         user_id: performed_by || fromAccount.user_id,
-        role: performed_by ? 'teller' : 'customer',
-        action: `High-value Transfer of ₹${amt.toLocaleString('en-IN')} from A/C ${fromAccount.account_number} queued for approval`,
+        role: isStaff ? 'teller' : 'customer',
+        action: `Transfer of ₹${amt.toLocaleString('en-IN')} from A/C ${fromAccount.account_number} queued. Reason: ${approvalReason}`,
         module: 'transactions',
       });
-      return { message: 'High-value transfer queued for manager approval.', transaction: tx };
+      return { message: 'Transfer queued for manager approval.', transaction: tx, requires_approval: true };
     }
 
     if (isExternal) {
