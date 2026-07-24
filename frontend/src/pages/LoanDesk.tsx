@@ -56,11 +56,21 @@ export const LoanDesk = () => {
   };
 
   const handleStatusUpdate = async (id: string, status: 'approved' | 'rejected') => {
+    const remarks = prompt(
+      status === 'approved' ? 'Enter Approval Remarks (Optional):' : 'Enter Rejection Reason / Remarks:'
+    );
+    if (status === 'rejected' && remarks === null) return; // User cancelled prompt
+
     setActionLoading(id);
     setStatusMsg(null);
     try {
-      await loanAPI.updateStatus(id, { status, approved_by: user?.id });
-      setLoans(prev => prev.map(l => l.id === id ? { ...l, status } : l));
+      await loanAPI.updateStatus(id, {
+        status,
+        approved_by: user?.id,
+        manager_remarks: remarks || undefined,
+        rejection_reason: status === 'rejected' ? (remarks || 'Application rejected by Branch Manager') : undefined,
+      });
+      fetchLoans();
       setStatusMsg({ id, type: 'success', text: `Loan ${status} successfully.` });
     } catch {
       setStatusMsg({ id, type: 'error', text: 'Failed to update loan status.' });
@@ -75,6 +85,7 @@ export const LoanDesk = () => {
     try {
       const res = await loanAPI.assessCredit(id);
       setAssessmentResult(res.data);
+      fetchLoans();
     } catch {
       setAssessmentResult({ credit_score: 710, total_deposits: 45000, decision: 'Low Risk — Recommended (Fallback)', loan_id: id });
     } finally {
@@ -162,16 +173,65 @@ export const LoanDesk = () => {
                     <div className="flex items-start justify-between">
                       <div>
                         <div className="flex items-center gap-2 mb-1">
-                          <p className="font-bold text-slate-900">{loan.user?.first_name} {loan.user?.last_name}</p>
+                          <p className="font-bold text-slate-900 text-base">{loan.user?.first_name} {loan.user?.last_name}</p>
+                          <span className="text-xs font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold">
+                            {loan.loan_number || '#' + loan.id.slice(0, 8)}
+                          </span>
                           <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border uppercase ${STATUS_COLORS[loan.status] || 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                            {loan.status}
+                            {loan.status.replace('_', ' ')}
                           </span>
                         </div>
-                        <p className="text-xs text-slate-500">{loan.loan_type} · {loan.duration_months} months · {loan.rate}% p.a.</p>
-                        <p className="text-xs text-slate-400 mt-0.5">{new Date(loan.created_at).toLocaleDateString()}</p>
+                        <p className="text-xs text-slate-500 font-medium">
+                          {loan.loan_type.toUpperCase()} LOAN · {loan.duration_months} Months · {loan.rate}% p.a.
+                        </p>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Contact: {loan.user?.email || 'N/A'} · {loan.user?.phone_number || 'N/A'} · Applied: {new Date(loan.created_at).toLocaleDateString()}
+                        </p>
                       </div>
-                      <p className="text-xl font-extrabold text-slate-900">₹{parseFloat(loan.amount).toLocaleString('en-IN')}</p>
+                      <div className="text-right">
+                        <p className="text-xl font-extrabold text-slate-900">₹{parseFloat(loan.amount).toLocaleString('en-IN')}</p>
+                      </div>
                     </div>
+
+                    {/* Applicant Profile Details */}
+                    <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs bg-slate-50/70 p-3 rounded-lg border border-slate-100">
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">MONTHLY INCOME</span>
+                        <span className="font-semibold text-slate-800">
+                          {loan.monthly_income ? `₹${parseFloat(loan.monthly_income).toLocaleString('en-IN')}` : 'N/A'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">EMPLOYMENT</span>
+                        <span className="font-semibold text-slate-800 capitalize">{loan.employment_status || 'N/A'}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">EMPLOYER</span>
+                        <span className="font-semibold text-slate-800">{loan.employer_name || 'N/A'}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">PURPOSE</span>
+                        <span className="font-semibold text-slate-800">{loan.purpose || 'N/A'}</span>
+                      </div>
+                    </div>
+
+                    {loan.remarks && (
+                      <p className="text-xs text-slate-600 mt-2 italic bg-amber-50/40 p-2 rounded border border-amber-100">
+                        <span className="font-bold not-italic">Applicant Note:</span> "{loan.remarks}"
+                      </p>
+                    )}
+
+                    {loan.manager_remarks && (
+                      <p className="text-xs text-blue-900 mt-2 bg-blue-50 p-2 rounded border border-blue-100">
+                        <span className="font-bold">Manager Remarks:</span> {loan.manager_remarks}
+                      </p>
+                    )}
+
+                    {loan.rejection_reason && (
+                      <p className="text-xs text-red-900 mt-2 bg-red-50 p-2 rounded border border-red-100">
+                        <span className="font-bold">Rejection Reason:</span> {loan.rejection_reason}
+                      </p>
+                    )}
 
                     <div className="flex gap-2 mt-4">
                       {(loan.status === 'pending' || loan.status === 'under_review') && (
@@ -181,7 +241,7 @@ export const LoanDesk = () => {
                             disabled={actionLoading === loan.id}
                             className="flex-1 py-2 bg-emerald-600 text-white text-xs font-semibold rounded-lg hover:bg-emerald-700 disabled:opacity-60 cursor-pointer transition-colors"
                           >
-                            {actionLoading === loan.id ? 'Updating...' : '✓ Approve'}
+                            {actionLoading === loan.id ? 'Updating...' : '✓ Approve & Disburse'}
                           </button>
                           <button
                             onClick={() => handleStatusUpdate(loan.id, 'rejected')}

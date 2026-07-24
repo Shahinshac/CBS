@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { accountAPI, transactionAPI, cardAPI, loanAPI, notificationAPI, beneficiaryAPI, billAPI, scheduledPaymentAPI, authAPI } from '../services/api';
+import { accountAPI, transactionAPI, cardAPI, loanAPI, notificationAPI, beneficiaryAPI, billAPI, scheduledPaymentAPI, authAPI, ticketAPI } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import {
   IndianRupee, CreditCard, Send, BookOpen, Bell, TrendingUp,
   Loader2, CheckCircle2, AlertCircle, Eye, EyeOff, History,
   Plus, Users, Receipt, FileDown, Trash2, ArrowUpRight, ArrowDownLeft,
-  Clock, Settings, Book, Printer
+  Clock, Settings, Book, Printer, HelpCircle, MessageSquare, SendHorizontal
 } from 'lucide-react';
 
 const TX_TYPE_STYLE: Record<string, { label: string; color: string }> = {
@@ -21,7 +21,7 @@ export const NetBanking = () => {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeSection, setActiveSection] = useState<'dashboard' | 'transfer' | 'fdrd' | 'cards' | 'loans' | 'history' | 'beneficiaries' | 'bills' | 'statement' | 'standing-instructions' | 'passbook' | 'settings'>('dashboard');
+  const [activeSection, setActiveSection] = useState<'dashboard' | 'transfer' | 'fdrd' | 'cards' | 'loans' | 'history' | 'beneficiaries' | 'bills' | 'statement' | 'standing-instructions' | 'passbook' | 'settings' | 'support'>('dashboard');
   const [showBalance, setShowBalance] = useState(true);
   const [selectedAccountId, setSelectedAccountId] = useState('');
 
@@ -68,6 +68,24 @@ export const NetBanking = () => {
   // Loan
   const [myLoans, setMyLoans] = useState<any[]>([]);
   const [loanLoading, setLoanLoading] = useState(false);
+  const [showApplyLoan, setShowApplyLoan] = useState(false);
+  const [loanForm, setLoanForm] = useState({
+    loan_type: 'personal', amount: '', duration_months: '12', purpose: '',
+    monthly_income: '', employment_status: 'salaried', employer_name: '', existing_loan_details: '', remarks: ''
+  });
+  const [loanStatusMsg, setLoanStatusMsg] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [loanSubmitting, setLoanSubmitting] = useState(false);
+
+  // Support Tickets
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [ticketLoading, setTicketLoading] = useState(false);
+  const [showNewTicket, setShowNewTicket] = useState(false);
+  const [ticketForm, setTicketForm] = useState({ subject: '', category: 'account', priority: 'medium', description: '' });
+  const [ticketStatusMsg, setTicketStatusMsg] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [ticketSubmitting, setTicketSubmitting] = useState(false);
+  const [selectedTicket, setSelectedTicket] = useState<any | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const [replySubmitting, setReplySubmitting] = useState(false);
 
   // Beneficiaries
   const [beneficiaries, setBeneficiaries] = useState<any[]>([]);
@@ -128,6 +146,87 @@ export const NetBanking = () => {
       setMyLoans(Array.isArray(res.data) ? res.data : res.data?.loans || []);
     } catch { setMyLoans([]); }
     finally { setLoanLoading(false); }
+  };
+
+  const handleApplyLoan = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user?.id || !loanForm.amount) return;
+    setLoanSubmitting(true);
+    setLoanStatusMsg(null);
+    try {
+      await loanAPI.apply({ ...loanForm, user_id: user.id });
+      setLoanStatusMsg({ type: 'success', message: 'Loan application submitted successfully!' });
+      setShowApplyLoan(false);
+      setLoanForm({ loan_type: 'personal', amount: '', duration_months: '12', purpose: '', monthly_income: '', employment_status: 'salaried', employer_name: '', existing_loan_details: '', remarks: '' });
+      fetchLoans();
+    } catch (err: any) {
+      setLoanStatusMsg({ type: 'error', message: err.response?.data?.message || 'Failed to submit loan application.' });
+    } finally {
+      setLoanSubmitting(false);
+    }
+  };
+
+  const handleCancelLoan = async (id: string) => {
+    if (!confirm('Are you sure you want to cancel this loan application?')) return;
+    try {
+      await loanAPI.cancel(id, 'Cancelled by customer');
+      fetchLoans();
+    } catch {
+      alert('Failed to cancel loan application.');
+    }
+  };
+
+  const fetchTickets = async () => {
+    if (!user?.id) return;
+    setTicketLoading(true);
+    try {
+      const res = await ticketAPI.getAll({ user_id: user.id });
+      const tks = Array.isArray(res.data) ? res.data : [];
+      setTickets(tks);
+      if (selectedTicket) {
+        const updated = tks.find((t: any) => t.id === selectedTicket.id);
+        if (updated) setSelectedTicket(updated);
+      }
+    } catch { setTickets([]); }
+    finally { setTicketLoading(false); }
+  };
+
+  const handleCreateTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user?.id || !ticketForm.subject.trim()) return;
+    setTicketSubmitting(true);
+    setTicketStatusMsg(null);
+    try {
+      await ticketAPI.create({ ...ticketForm, user_id: user.id });
+      setTicketStatusMsg({ type: 'success', message: 'Support ticket registered successfully!' });
+      setShowNewTicket(false);
+      setTicketForm({ subject: '', category: 'account', priority: 'medium', description: '' });
+      fetchTickets();
+    } catch (err: any) {
+      setTicketStatusMsg({ type: 'error', message: err.response?.data?.message || 'Failed to create ticket.' });
+    } finally {
+      setTicketSubmitting(false);
+    }
+  };
+
+  const handleSendReply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTicket || !replyText.trim() || !user) return;
+    setReplySubmitting(true);
+    try {
+      await ticketAPI.reply(selectedTicket.id, {
+        user_id: user.id,
+        message: replyText,
+        user_name: `${user.first_name} ${user.last_name}`,
+        user_role: 'customer',
+      });
+      setReplyText('');
+      fetchTickets();
+    } catch {
+      alert('Failed to post reply.');
+    } finally {
+      setReplySubmitting(false);
+    }
   };
 
   const fetchBeneficiaries = async () => {
@@ -340,11 +439,12 @@ export const NetBanking = () => {
     { id: 'bills', label: 'Bill Pay', icon: Receipt, onLoad: fetchBills },
     { id: 'fdrd', label: 'FD / RD', icon: TrendingUp },
     { id: 'cards', label: 'My Cards', icon: CreditCard },
-    { id: 'loans', label: 'My Loans', icon: BookOpen },
+    { id: 'loans', label: 'My Loans', icon: BookOpen, onLoad: fetchLoans },
     { id: 'history', label: 'History', icon: History },
     { id: 'statement', label: 'Statement', icon: FileDown },
     { id: 'standing-instructions', label: 'Standing Instructions', icon: Clock, onLoad: fetchScheduledPayments },
     { id: 'passbook', label: 'Passbook', icon: Book },
+    { id: 'support', label: 'Support Center', icon: HelpCircle, onLoad: fetchTickets },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
@@ -632,37 +732,464 @@ export const NetBanking = () => {
 
       {/* Loans */}
       {activeSection === 'loans' && (
-        <div className="premium-card overflow-hidden">
-          <div className="p-5 border-b border-slate-100 bg-slate-50/50">
-            <h2 className="text-base font-bold text-slate-900 flex items-center">
-              <BookOpen className="w-4 h-4 mr-2 text-blue-600" /> My Loan Applications
-            </h2>
-          </div>
-          {loanLoading ? (
-            <div className="p-10 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-blue-500" /></div>
-          ) : myLoans.length === 0 ? (
-            <div className="p-10 text-center text-slate-400 text-sm">
-              <BookOpen className="w-10 h-10 mx-auto mb-3 opacity-30" />
-              <p>No loan applications found.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {myLoans.map(loan => (
-                <div key={loan.id} className="p-5 flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold text-slate-900 capitalize">{loan.loan_type} Loan</p>
-                    <p className="text-xs text-slate-500">{loan.duration_months} months · {loan.rate}% p.a. · Applied {new Date(loan.created_at).toLocaleDateString()}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg font-extrabold text-slate-900">₹{parseFloat(loan.amount).toLocaleString('en-IN')}</p>
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${loan.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-100' : loan.status === 'approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
-                      {loan.status}
-                    </span>
-                  </div>
-                </div>
-              ))}
+        <div className="space-y-6">
+          {loanStatusMsg && (
+            <div className={`p-4 rounded-xl border flex items-center ${loanStatusMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
+              {loanStatusMsg.type === 'success' ? <CheckCircle2 className="w-5 h-5 mr-2" /> : <AlertCircle className="w-5 h-5 mr-2" />}
+              {loanStatusMsg.message}
             </div>
           )}
+
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">Loan Portal</h2>
+              <p className="text-xs text-slate-500">Apply for commercial banking loans and track EMI schedules.</p>
+            </div>
+            <button
+              onClick={() => setShowApplyLoan(!showApplyLoan)}
+              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors shadow-sm cursor-pointer"
+            >
+              <Plus className="w-4 h-4 mr-1" /> {showApplyLoan ? 'Cancel Application' : 'Apply for New Loan'}
+            </button>
+          </div>
+
+          {/* New Loan Application Form */}
+          {showApplyLoan && (
+            <div className="premium-card p-6 border-2 border-blue-100 bg-blue-50/20">
+              <h3 className="font-bold text-slate-900 text-base mb-4 flex items-center">
+                <BookOpen className="w-4 h-4 mr-2 text-blue-600" /> Apply for Loan
+              </h3>
+              <form onSubmit={handleApplyLoan} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Loan Type *</label>
+                    <select
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+                      value={loanForm.loan_type}
+                      onChange={e => setLoanForm({ ...loanForm, loan_type: e.target.value })}
+                    >
+                      <option value="personal">Personal Loan</option>
+                      <option value="home">Home Loan</option>
+                      <option value="vehicle">Vehicle / Auto Loan</option>
+                      <option value="education">Education Loan</option>
+                      <option value="business">Business Loan</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Requested Amount (₹) *</label>
+                    <input
+                      type="number"
+                      required
+                      min="5000"
+                      placeholder="e.g. 200000"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+                      value={loanForm.amount}
+                      onChange={e => setLoanForm({ ...loanForm, amount: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Tenure (Months) *</label>
+                    <select
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+                      value={loanForm.duration_months}
+                      onChange={e => setLoanForm({ ...loanForm, duration_months: e.target.value })}
+                    >
+                      <option value="6">6 Months</option>
+                      <option value="12">12 Months (1 Year)</option>
+                      <option value="24">24 Months (2 Years)</option>
+                      <option value="36">36 Months (3 Years)</option>
+                      <option value="60">60 Months (5 Years)</option>
+                      <option value="120">120 Months (10 Years)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Monthly Income (₹)</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 75000"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+                      value={loanForm.monthly_income}
+                      onChange={e => setLoanForm({ ...loanForm, monthly_income: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Employment Status</label>
+                    <select
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+                      value={loanForm.employment_status}
+                      onChange={e => setLoanForm({ ...loanForm, employment_status: e.target.value })}
+                    >
+                      <option value="salaried">Salaried</option>
+                      <option value="self_employed">Self Employed</option>
+                      <option value="business">Business Owner</option>
+                      <option value="retired">Retired</option>
+                      <option value="student">Student</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Employer / Company Name</label>
+                    <input
+                      type="text"
+                      placeholder="Organization name"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+                      value={loanForm.employer_name}
+                      onChange={e => setLoanForm({ ...loanForm, employer_name: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Purpose of Loan</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Home Renovation, Education, Business Expansion"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+                    value={loanForm.purpose}
+                    onChange={e => setLoanForm({ ...loanForm, purpose: e.target.value })}
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowApplyLoan(false)}
+                    className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold hover:bg-slate-100 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loanSubmitting || !loanForm.amount}
+                    className="px-5 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 cursor-pointer disabled:opacity-60 transition-colors"
+                  >
+                    {loanSubmitting ? 'Submitting Application...' : 'Submit Application'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Existing Loans */}
+          <div className="premium-card overflow-hidden">
+            <div className="p-5 border-b border-slate-100 bg-slate-50/50">
+              <h2 className="text-base font-bold text-slate-900 flex items-center">
+                <BookOpen className="w-4 h-4 mr-2 text-blue-600" /> My Loan Applications ({myLoans.length})
+              </h2>
+            </div>
+            {loanLoading ? (
+              <div className="p-10 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-blue-500" /></div>
+            ) : myLoans.length === 0 ? (
+              <div className="p-10 text-center text-slate-400 text-sm">
+                <BookOpen className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                <p>No loan applications found.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {myLoans.map(loan => (
+                  <div key={loan.id} className="p-5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <p className="font-semibold text-slate-900 capitalize text-base">{loan.loan_type} Loan</p>
+                          <span className="text-xs font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold">
+                            {loan.loan_number || '#' + loan.id.slice(0, 8)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {loan.duration_months} months · {loan.rate}% p.a. · Applied {new Date(loan.created_at).toLocaleDateString()}
+                          {loan.purpose ? ` · Purpose: ${loan.purpose}` : ''}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-extrabold text-slate-900">₹{parseFloat(loan.amount).toLocaleString('en-IN')}</p>
+                        <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border inline-block ${
+                          loan.status === 'approved' || loan.status === 'disbursed' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
+                          loan.status === 'rejected' ? 'bg-red-50 text-red-700 border-red-100' :
+                          loan.status === 'cancelled' ? 'bg-slate-100 text-slate-600 border-slate-200' :
+                          'bg-amber-50 text-amber-700 border-amber-100'
+                        }`}>
+                          {loan.status.replace('_', ' ').toUpperCase()}
+                        </span>
+                      </div>
+                    </div>
+
+                    {loan.manager_remarks && (
+                      <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-900">
+                        <span className="font-bold">Manager Note:</span> {loan.manager_remarks}
+                      </div>
+                    )}
+
+                    {['pending', 'under_review'].includes(loan.status) && (
+                      <div className="flex justify-end">
+                        <button
+                          onClick={() => handleCancelLoan(loan.id)}
+                          className="text-xs text-red-600 hover:text-red-700 font-semibold cursor-pointer border border-red-200 bg-red-50 px-3 py-1 rounded hover:bg-red-100 transition-colors"
+                        >
+                          Cancel Application
+                        </button>
+                      </div>
+                    )}
+
+                    {/* EMI Repayment Schedule for Approved Loans */}
+                    {loan.repayments && loan.repayments.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-slate-100">
+                        <p className="text-xs font-bold text-slate-700 mb-2">Upcoming EMI Repayments ({loan.repayments.length} Installments)</p>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                          {loan.repayments.slice(0, 4).map((rep: any, i: number) => (
+                            <div key={rep.id || i} className="p-2 bg-slate-50 rounded border border-slate-100">
+                              <p className="font-semibold text-slate-900">EMI #{i+1}: ₹{parseFloat(rep.emi_amount).toLocaleString('en-IN')}</p>
+                              <p className="text-slate-500">Due: {new Date(rep.due_date).toLocaleDateString()}</p>
+                              <span className={`text-[10px] font-bold ${rep.status === 'paid' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                                {rep.status.toUpperCase()}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Support Center */}
+      {activeSection === 'support' && (
+        <div className="space-y-6">
+          {ticketStatusMsg && (
+            <div className={`p-4 rounded-xl border flex items-center ${ticketStatusMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
+              {ticketStatusMsg.type === 'success' ? <CheckCircle2 className="w-5 h-5 mr-2" /> : <AlertCircle className="w-5 h-5 mr-2" />}
+              {ticketStatusMsg.message}
+            </div>
+          )}
+
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">Support Center</h2>
+              <p className="text-xs text-slate-500">Raise issues, track support tickets, and chat directly with bank staff.</p>
+            </div>
+            <button
+              onClick={() => setShowNewTicket(!showNewTicket)}
+              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors shadow-sm cursor-pointer"
+            >
+              <Plus className="w-4 h-4 mr-1" /> {showNewTicket ? 'Cancel' : 'Raise New Support Ticket'}
+            </button>
+          </div>
+
+          {/* New Ticket Form */}
+          {showNewTicket && (
+            <div className="premium-card p-6 border-2 border-blue-100 bg-blue-50/20">
+              <h3 className="font-bold text-slate-900 text-base mb-4 flex items-center">
+                <MessageSquare className="w-4 h-4 mr-2 text-blue-600" /> Create Support Ticket
+              </h3>
+              <form onSubmit={handleCreateTicket} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Subject *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Brief description of your issue"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+                    value={ticketForm.subject}
+                    onChange={e => setTicketForm({ ...ticketForm, subject: e.target.value })}
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Category *</label>
+                    <select
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+                      value={ticketForm.category}
+                      onChange={e => setTicketForm({ ...ticketForm, category: e.target.value })}
+                    >
+                      <option value="account">Account Issues</option>
+                      <option value="transaction">Transaction Issues</option>
+                      <option value="loan">Loan Issues</option>
+                      <option value="card">ATM / Debit Card Issues</option>
+                      <option value="net_banking">Net Banking Issues</option>
+                      <option value="mobile_banking">Mobile Banking Issues</option>
+                      <option value="cheque">Cheque Book Issues</option>
+                      <option value="kyc">KYC Issues</option>
+                      <option value="technical">Technical Issues</option>
+                      <option value="complaints">Complaints</option>
+                      <option value="suggestions">Suggestions</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Priority</label>
+                    <select
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+                      value={ticketForm.priority}
+                      onChange={e => setTicketForm({ ...ticketForm, priority: e.target.value })}
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                      <option value="urgent">Urgent</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Description / Details</label>
+                  <textarea
+                    rows={4}
+                    placeholder="Provide detailed description of the issue or inquiry"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+                    value={ticketForm.description}
+                    onChange={e => setTicketForm({ ...ticketForm, description: e.target.value })}
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowNewTicket(false)}
+                    className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold hover:bg-slate-100 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={ticketSubmitting || !ticketForm.subject.trim()}
+                    className="px-5 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 cursor-pointer disabled:opacity-60 transition-colors"
+                  >
+                    {ticketSubmitting ? 'Registering Ticket...' : 'Register Ticket'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Tickets View Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Ticket List */}
+            <div className="lg:col-span-1 premium-card overflow-hidden">
+              <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                <h3 className="font-bold text-slate-900 text-sm">My Tickets ({tickets.length})</h3>
+                <button onClick={fetchTickets} className="text-xs text-blue-600 hover:underline">Refresh</button>
+              </div>
+              {ticketLoading ? (
+                <div className="p-8 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>
+              ) : tickets.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 text-xs">No tickets registered</div>
+              ) : (
+                <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
+                  {tickets.map(t => (
+                    <div
+                      key={t.id}
+                      onClick={() => setSelectedTicket(t)}
+                      className={`p-3 text-xs cursor-pointer hover:bg-slate-50 transition-colors ${selectedTicket?.id === t.id ? 'bg-blue-50/50 border-l-4 border-blue-600' : ''}`}
+                    >
+                      <div className="flex justify-between items-start mb-1">
+                        <span className="font-mono font-bold text-blue-700">{t.ticket_number || '#' + t.id.slice(0, 8)}</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          t.status === 'resolved' || t.status === 'closed' ? 'bg-emerald-50 text-emerald-700' :
+                          t.status === 'in_progress' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'
+                        }`}>
+                          {t.status.replace('_', ' ').toUpperCase()}
+                        </span>
+                      </div>
+                      <p className="font-semibold text-slate-900 truncate">{t.subject}</p>
+                      <p className="text-slate-400 text-[10px] mt-1 capitalize">{t.category} · {new Date(t.created_at).toLocaleDateString()}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Selected Ticket Thread */}
+            <div className="lg:col-span-2 premium-card p-5 flex flex-col justify-between min-h-[500px]">
+              {selectedTicket ? (
+                <>
+                  <div>
+                    <div className="pb-4 border-b border-slate-100 flex justify-between items-start">
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className="font-mono font-bold text-blue-700 text-sm">{selectedTicket.ticket_number || '#' + selectedTicket.id.slice(0, 8)}</span>
+                          <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold capitalize">{selectedTicket.category}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded font-bold ${selectedTicket.priority === 'high' || selectedTicket.priority === 'urgent' ? 'text-red-700 bg-red-50' : 'text-slate-600 bg-slate-100'}`}>
+                            {selectedTicket.priority.toUpperCase()}
+                          </span>
+                        </div>
+                        <h3 className="font-bold text-slate-900 text-lg mt-1">{selectedTicket.subject}</h3>
+                        <p className="text-xs text-slate-400 mt-1">
+                          Opened on {new Date(selectedTicket.created_at).toLocaleString()}
+                          {selectedTicket.assigned_user ? ` · Assigned to: ${selectedTicket.assigned_user.first_name} ${selectedTicket.assigned_user.last_name}` : ''}
+                        </p>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                        selectedTicket.status === 'resolved' || selectedTicket.status === 'closed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                        'bg-amber-50 text-amber-700 border border-amber-100'
+                      }`}>
+                        {selectedTicket.status.replace('_', ' ').toUpperCase()}
+                      </span>
+                    </div>
+
+                    {selectedTicket.description && (
+                      <div className="p-3 bg-slate-50 rounded-lg text-xs text-slate-700 mt-4 border border-slate-100">
+                        <span className="font-bold block mb-1 text-slate-900">Original Request:</span>
+                        {selectedTicket.description}
+                      </div>
+                    )}
+
+                    {/* Conversation Replies */}
+                    <div className="mt-4 space-y-3 max-h-72 overflow-y-auto pr-1">
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Conversation History</p>
+                      {(!selectedTicket.replies || selectedTicket.replies.length === 0) ? (
+                        <p className="text-xs text-slate-400 italic">No replies yet. Bank staff will respond shortly.</p>
+                      ) : selectedTicket.replies.map((reply: any) => (
+                        <div
+                          key={reply.id}
+                          className={`p-3 rounded-lg text-xs ${reply.user_role === 'customer' ? 'bg-blue-50/70 border border-blue-100 ml-6' : 'bg-slate-100 border border-slate-200 mr-6'}`}
+                        >
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="font-bold text-slate-900">{reply.user_name || 'User'} <span className="text-[10px] font-normal text-slate-500">({reply.user_role})</span></span>
+                            <span className="text-[10px] text-slate-400">{new Date(reply.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                          <p className="text-slate-800 whitespace-pre-wrap">{reply.message}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Reply Box */}
+                  {selectedTicket.status !== 'closed' ? (
+                    <form onSubmit={handleSendReply} className="mt-4 pt-4 border-t border-slate-100 flex gap-2">
+                      <input
+                        type="text"
+                        required
+                        placeholder="Type your reply..."
+                        className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+                        value={replyText}
+                        onChange={e => setReplyText(e.target.value)}
+                      />
+                      <button
+                        type="submit"
+                        disabled={replySubmitting || !replyText.trim()}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors disabled:opacity-60 flex items-center cursor-pointer"
+                      >
+                        <SendHorizontal className="w-3.5 h-3.5 mr-1" /> {replySubmitting ? '...' : 'Send'}
+                      </button>
+                    </form>
+                  ) : (
+                    <div className="mt-4 p-3 bg-slate-100 text-center text-xs text-slate-500 rounded-lg">
+                      This ticket is closed.
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-slate-400 py-16">
+                  <MessageSquare className="w-12 h-12 mb-3 opacity-30 text-blue-500" />
+                  <p className="text-sm font-medium">Select a ticket from the list to view conversation history and reply.</p>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

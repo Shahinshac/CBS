@@ -148,7 +148,8 @@ export const loanAPI = {
   getAll: (params?: { user_id?: string; status?: string; loan_type?: string }) => api.get('/loans', { params }),
   getById: (id: string) => api.get(`/loans/${id}`),
   apply: (data: any) => api.post('/loans', data),
-  updateStatus: (id: string, data: { status: string; approved_by?: string; approved_amount?: number }) =>
+  cancel: (id: string, reason?: string) => api.patch(`/loans/${id}/cancel`, { reason }),
+  updateStatus: (id: string, data: { status: string; approved_by?: string; approved_amount?: number; manager_remarks?: string; rejection_reason?: string }) =>
     api.patch(`/loans/${id}/status`, data),
   assessCredit: (loanId: string) => api.post(`/loans/${loanId}/credit-assessment`),
 };
@@ -204,11 +205,20 @@ export const cashDrawerAPI = {
 
 // ─── Support Tickets ───────────────────────────────────────────────────────
 export const ticketAPI = {
-  getAll: (params?: { status?: string; user_id?: string }) => api.get('/support/tickets', { params }),
+  getAll: (params?: { status?: string; user_id?: string; assigned_to?: string; category?: string }) =>
+    api.get('/support/tickets', { params }),
   create: (data: { user_id: string; subject: string; description?: string; priority?: string; category?: string }) =>
     api.post('/support/tickets', data),
+  reply: (id: string, data: { user_id?: string; message: string; user_name?: string; user_role?: string }) =>
+    api.post(`/support/tickets/${id}/reply`, data),
+  updateStatus: (id: string, data: { status: string; assigned_to?: string; updated_by?: string }) =>
+    api.patch(`/support/tickets/${id}/status`, data),
   resolve: (id: string, data?: { status?: string; assigned_to?: string }) =>
     api.patch(`/support/tickets/${id}/resolve`, data),
+  assign: (id: string, data: { assigned_to: string; assigned_by?: string }) =>
+    api.post(`/support/tickets/${id}/assign`, data),
+  escalate: (id: string, data: { escalated_by?: string; reason?: string }) =>
+    api.post(`/support/tickets/${id}/escalate`, data),
 };
 
 // ─── Audit Logs ────────────────────────────────────────────────────────────

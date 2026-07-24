@@ -1102,13 +1102,19 @@ export class AppController {
   // ═══════════════════════════════════════════════════════════════════════════
   @Post('loans')
   async applyLoan(@Body() body: any) {
-    const { user_id, amount, duration_months, rate, loan_type, purpose, collateral } = body;
+    const {
+      user_id, amount, duration_months, rate, loan_type, purpose, collateral,
+      monthly_income, employment_status, employer_name, existing_loan_details, remarks
+    } = body;
     if (!user_id || !amount || !duration_months) {
       throw new BadRequestException('user_id, amount, and duration_months are required');
     }
 
+    const loanNumber = 'LN' + Math.floor(10000000 + Math.random() * 90000000).toString();
+
     const loan = await this.prisma.loan.create({
       data: {
+        loan_number: loanNumber,
         user_id,
         amount: parseFloat(amount),
         duration_months: parseInt(duration_months),
@@ -1117,22 +1123,69 @@ export class AppController {
         status: 'pending',
         purpose: purpose || null,
         collateral: collateral || null,
+        monthly_income: monthly_income ? parseFloat(monthly_income) : null,
+        employment_status: employment_status || null,
+        employer_name: employer_name || null,
+        existing_loan_details: existing_loan_details || null,
+        remarks: remarks || null,
       },
+      include: { user: true },
+    });
+
+    // Find manager for user's branch to notify
+    const branchManager = await this.prisma.user.findFirst({
+      where: { role: 'branch_manager', is_active: true },
     });
 
     await Promise.all([
-      audit(this.prisma, { user_id, role: 'customer', action: `Loan application: ${loan_type} ₹${parseFloat(amount).toLocaleString('en-IN')}`, module: 'loans' }),
+      audit(this.prisma, {
+        user_id,
+        role: 'customer',
+        action: `Loan application (${loanNumber}): ${loan_type} ₹${parseFloat(amount).toLocaleString('en-IN')}`,
+        module: 'loans',
+      }),
       this.prisma.notification.create({
         data: {
           user_id,
           title: 'Loan Application Submitted',
-          message: `Your ${loan_type} loan application for ₹${parseFloat(amount).toLocaleString('en-IN')} has been submitted. Application ID: ${loan.id.slice(0, 8).toUpperCase()}`,
+          message: `Your ${loan_type} loan application (${loanNumber}) for ₹${parseFloat(amount).toLocaleString('en-IN')} has been submitted for manager review.`,
           type: 'info',
         },
       }),
+      branchManager ? this.prisma.notification.create({
+        data: {
+          user_id: branchManager.id,
+          title: 'New Loan Request Pending',
+          message: `New ${loan_type} loan application (${loanNumber}) for ₹${parseFloat(amount).toLocaleString('en-IN')} submitted by ${loan.user.first_name} ${loan.user.last_name}.`,
+          type: 'warning',
+        },
+      }) : Promise.resolve(),
     ]);
 
     return { message: 'Loan application submitted.', loan };
+  }
+
+  @Patch('loans/:id/cancel')
+  async cancelLoan(@Param('id') id: string, @Body() body: any) {
+    const loan = await this.prisma.loan.findUnique({ where: { id } });
+    if (!loan) throw new NotFoundException('Loan not found');
+    if (!['pending', 'under_review'].includes(loan.status)) {
+      throw new BadRequestException('Loan can only be cancelled while in pending or under review status');
+    }
+
+    const updated = await this.prisma.loan.update({
+      where: { id },
+      data: { status: 'cancelled', remarks: body.reason ? `Cancelled by user: ${body.reason}` : loan.remarks },
+    });
+
+    await audit(this.prisma, {
+      user_id: loan.user_id,
+      role: 'customer',
+      action: `Cancelled loan application ${loan.loan_number}`,
+      module: 'loans',
+    });
+
+    return { message: 'Loan application cancelled.', loan: updated };
   }
 
   @Get('loans')
@@ -1150,7 +1203,7 @@ export class AppController {
       where,
       include: {
         user: { select: { id: true, first_name: true, last_name: true, email: true, phone_number: true, branch: { select: { name: true, code: true } } } },
-        repayments: { orderBy: { due_date: 'asc' }, take: 5 },
+        repayments: { orderBy: { due_date: 'asc' } },
       },
       orderBy: { created_at: 'desc' },
     });
@@ -1172,9 +1225,9 @@ export class AppController {
   @Patch('loans/:id/status')
   async updateLoanStatus(
     @Param('id') id: string,
-    @Body() body: { status: string; approved_by?: string; approved_amount?: number },
+    @Body() body: { status: string; approved_by?: string; approved_amount?: number; manager_remarks?: string; rejection_reason?: string },
   ) {
-    const validStatuses = ['approved', 'rejected', 'pending', 'under_review', 'disbursed', 'closed'];
+    const validStatuses = ['approved', 'rejected', 'pending', 'under_review', 'disbursed', 'closed', 'cancelled'];
     if (!validStatuses.includes(body.status)) {
       throw new BadRequestException(`Status must be one of: ${validStatuses.join(', ')}`);
     }
@@ -1185,6 +1238,8 @@ export class AppController {
         status: body.status,
         ...(body.approved_by && { approved_by: body.approved_by }),
         ...(body.approved_amount && { approved_amount: body.approved_amount }),
+        ...(body.manager_remarks && { manager_remarks: body.manager_remarks }),
+        ...(body.rejection_reason && { rejection_reason: body.rejection_reason }),
         ...(body.status === 'disbursed' && {
           disbursed_amount: body.approved_amount,
           disbursed_at: new Date(),
@@ -1200,19 +1255,25 @@ export class AppController {
       const r = Number(loan.rate) / 100 / 12;
       let outstanding = loanAmt;
 
-      // 1. Create a dedicated Loan Account
-      const loanAccountNum = 'LN' + Math.floor(10000000 + Math.random() * 90000000).toString();
-      const loanAccount = await this.prisma.account.create({
-        data: {
-          account_number: loanAccountNum,
-          account_type: 'loan',
-          balance: loanAmt,
-          interest_rate: loan.rate,
-          status: 'active',
-          user_id: loan.user_id,
-          branch_id: loan.user.branch_id || null,
-        },
+      // 1. Create a dedicated Loan Account if not already created
+      const existingLoanAccount = await this.prisma.account.findFirst({
+        where: { user_id: loan.user_id, account_type: 'loan', account_number: loan.loan_number },
       });
+
+      let loanAccount = existingLoanAccount;
+      if (!loanAccount) {
+        loanAccount = await this.prisma.account.create({
+          data: {
+            account_number: loan.loan_number,
+            account_type: 'loan',
+            balance: loanAmt,
+            interest_rate: loan.rate,
+            status: 'active',
+            user_id: loan.user_id,
+            branch_id: loan.user.branch_id || null,
+          },
+        });
+      }
 
       // 2. Disburse funds to main savings account if it exists
       const mainAccount = await this.prisma.account.findFirst({
@@ -1228,7 +1289,7 @@ export class AppController {
             data: {
               amount: loanAmt,
               transaction_type: 'loan_disbursement',
-              description: `Loan Disbursed to savings account ${mainAccount.account_number} (Loan A/C: ${loanAccountNum})`,
+              description: `Loan Disbursed to savings account ${mainAccount.account_number} (Loan A/C: ${loan.loan_number})`,
               from_account_id: loanAccount.id,
               to_account_id: mainAccount.id,
               status: 'success',
@@ -1237,6 +1298,9 @@ export class AppController {
           });
         });
       }
+
+      // Clear existing repayments if any
+      await this.prisma.loanRepayment.deleteMany({ where: { loan_id: id } });
 
       for (let m = 1; m <= loan.duration_months; m++) {
         const interest = outstanding * r;
@@ -1258,15 +1322,15 @@ export class AppController {
     await Promise.all([
       audit(this.prisma, {
         user_id: body.approved_by,
-        role: 'loan_officer',
-        action: `Loan ${id.slice(0, 8)} status changed to ${body.status} for ${loan.user.first_name} ${loan.user.last_name}`,
+        role: 'branch_manager',
+        action: `Loan ${loan.loan_number} status updated to ${body.status}. Remarks: ${body.manager_remarks || body.rejection_reason || 'N/A'}`,
         module: 'loans',
       }),
       this.prisma.notification.create({
         data: {
           user_id: loan.user_id,
-          title: `Loan ${body.status.charAt(0).toUpperCase() + body.status.slice(1)}`,
-          message: `Your ${loan.loan_type} loan application for ₹${Number(loan.amount).toLocaleString('en-IN')} has been ${body.status}.`,
+          title: `Loan Application ${body.status.toUpperCase()}`,
+          message: `Your ${loan.loan_type} loan (${loan.loan_number}) for ₹${Number(loan.amount).toLocaleString('en-IN')} has been ${body.status}.${body.manager_remarks ? ' Remarks: ' + body.manager_remarks : ''}`,
           type: body.status === 'approved' || body.status === 'disbursed' ? 'success' : body.status === 'rejected' ? 'warning' : 'info',
         },
       }),
@@ -1610,35 +1674,273 @@ export class AppController {
   // SUPPORT TICKETS
   // ═══════════════════════════════════════════════════════════════════════════
   @Get('support/tickets')
-  async getTickets(@Query('status') status?: string, @Query('user_id') user_id?: string) {
+  async getTickets(
+    @Query('status') status?: string,
+    @Query('user_id') user_id?: string,
+    @Query('assigned_to') assigned_to?: string,
+    @Query('category') category?: string,
+  ) {
     const where: any = {};
     if (status) where.status = status;
     if (user_id) where.user_id = user_id;
+    if (assigned_to) where.assigned_to = assigned_to;
+    if (category) where.category = category;
 
-    return this.prisma.supportTicket.findMany({
+    const tickets = await this.prisma.supportTicket.findMany({
       where,
       include: {
-        user: { select: { first_name: true, last_name: true, email: true, phone_number: true } },
+        user: { select: { id: true, first_name: true, last_name: true, email: true, phone_number: true, username: true } },
+        replies: { orderBy: { created_at: 'asc' } },
       },
-      orderBy: { created_at: 'desc' },
+      orderBy: { updated_at: 'desc' },
     });
+
+    // Resolve assigned_to user details
+    const assignedIds = Array.from(new Set(tickets.map(t => t.assigned_to).filter(Boolean))) as string[];
+    let staffMap: Record<string, any> = {};
+    if (assignedIds.length > 0) {
+      const staffList = await this.prisma.user.findMany({
+        where: { id: { in: assignedIds } },
+        select: { id: true, first_name: true, last_name: true, role: true },
+      });
+      staffMap = staffList.reduce((acc: any, s) => { acc[s.id] = s; return acc; }, {});
+    }
+
+    return tickets.map(t => ({
+      ...t,
+      assigned_user: t.assigned_to ? staffMap[t.assigned_to] || null : null,
+    }));
   }
 
   @Post('support/tickets')
   async createTicket(@Body() body: any) {
     const { user_id, subject, description, priority, category } = body;
     if (!user_id || !subject) throw new BadRequestException('user_id and subject are required');
-    return this.prisma.supportTicket.create({
-      data: { user_id, subject, description, priority: priority || 'medium', category: category || 'general' },
+
+    const customer = await this.prisma.user.findUnique({ where: { id: user_id } });
+    if (!customer) throw new NotFoundException('Customer not found');
+
+    const ticketNum = 'TKT-' + Math.floor(10000 + Math.random() * 90000).toString();
+    const cat = category || 'general';
+
+    // Auto-assignment by category rules
+    let targetRole = 'teller';
+    if (['loan', 'complaints'].includes(cat)) targetRole = 'branch_manager';
+    else if (['technical', 'suggestions'].includes(cat)) targetRole = 'super_admin';
+
+    const assignedStaff = await this.prisma.user.findFirst({
+      where: { role: targetRole, is_active: true },
     });
+
+    const ticket = await this.prisma.supportTicket.create({
+      data: {
+        ticket_number: ticketNum,
+        user_id,
+        subject,
+        description: description || null,
+        priority: priority || 'medium',
+        category: cat,
+        status: assignedStaff ? 'assigned' : 'open',
+        assigned_to: assignedStaff ? assignedStaff.id : null,
+      },
+      include: {
+        user: { select: { first_name: true, last_name: true, email: true } },
+      },
+    });
+
+    await Promise.all([
+      audit(this.prisma, {
+        user_id,
+        role: customer.role,
+        action: `Created support ticket ${ticketNum}: ${subject} [${cat}]`,
+        module: 'support',
+      }),
+      this.prisma.notification.create({
+        data: {
+          user_id,
+          title: `Support Ticket Created (${ticketNum})`,
+          message: `Your support ticket regarding "${subject}" has been registered. ID: ${ticketNum}.`,
+          type: 'info',
+        },
+      }),
+      assignedStaff ? this.prisma.notification.create({
+        data: {
+          user_id: assignedStaff.id,
+          title: `New Ticket Assigned (${ticketNum})`,
+          message: `Ticket ${ticketNum} (${cat.toUpperCase()}) from ${customer.first_name} ${customer.last_name} assigned to you.`,
+          type: 'warning',
+        },
+      }) : Promise.resolve(),
+    ]);
+
+    return { message: 'Support ticket created successfully.', ticket };
+  }
+
+  @Post('support/tickets/:id/reply')
+  async replyTicket(@Param('id') id: string, @Body() body: any) {
+    const { user_id, message, user_name, user_role } = body;
+    if (!message || !message.trim()) throw new BadRequestException('Message is required');
+
+    const ticket = await this.prisma.supportTicket.findUnique({
+      where: { id },
+      include: { user: true },
+    });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+
+    const sender = user_id ? await this.prisma.user.findUnique({ where: { id: user_id } }) : null;
+    const senderRole = user_role || (sender ? sender.role : 'customer');
+    const senderName = user_name || (sender ? `${sender.first_name} ${sender.last_name}` : 'Support Agent');
+
+    const reply = await this.prisma.ticketReply.create({
+      data: {
+        ticket_id: id,
+        user_id: user_id || ticket.user_id,
+        user_name: senderName,
+        user_role: senderRole,
+        message: message.trim(),
+      },
+    });
+
+    // Update ticket status if customer replied
+    const newStatus = senderRole === 'customer' ? 'in_progress' : ticket.status === 'open' ? 'in_progress' : ticket.status;
+    await this.prisma.supportTicket.update({
+      where: { id },
+      data: { status: newStatus, updated_at: new Date() },
+    });
+
+    // Notify the other party
+    const recipientId = senderRole === 'customer' ? ticket.assigned_to : ticket.user_id;
+    if (recipientId) {
+      await this.prisma.notification.create({
+        data: {
+          user_id: recipientId,
+          title: `New Reply on Ticket ${ticket.ticket_number || ticket.id.slice(0, 8)}`,
+          message: `${senderName}: "${message.length > 80 ? message.slice(0, 80) + '...' : message}"`,
+          type: 'info',
+        },
+      });
+    }
+
+    await audit(this.prisma, {
+      user_id: user_id || ticket.user_id,
+      role: senderRole,
+      action: `Replied to support ticket ${ticket.ticket_number || ticket.id.slice(0, 8)}`,
+      module: 'support',
+    });
+
+    return { message: 'Reply posted.', reply };
+  }
+
+  @Patch('support/tickets/:id/status')
+  async updateTicketStatus(@Param('id') id: string, @Body() body: any) {
+    const { status, assigned_to, updated_by } = body;
+    const ticket = await this.prisma.supportTicket.findUnique({ where: { id }, include: { user: true } });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+
+    const isResolvedOrClosed = ['resolved', 'closed'].includes(status);
+    const updated = await this.prisma.supportTicket.update({
+      where: { id },
+      data: {
+        ...(status && { status }),
+        ...(assigned_to !== undefined && { assigned_to }),
+        ...(isResolvedOrClosed && { resolved_at: new Date() }),
+        updated_at: new Date(),
+      },
+    });
+
+    await Promise.all([
+      audit(this.prisma, {
+        user_id: updated_by || ticket.user_id,
+        role: 'staff',
+        action: `Updated ticket ${ticket.ticket_number || ticket.id.slice(0, 8)} status to ${status || ticket.status}`,
+        module: 'support',
+      }),
+      this.prisma.notification.create({
+        data: {
+          user_id: ticket.user_id,
+          title: `Ticket ${ticket.ticket_number || ticket.id.slice(0, 8)} Status Update`,
+          message: `Your support ticket regarding "${ticket.subject}" is now ${status.replace('_', ' ').toUpperCase()}.`,
+          type: isResolvedOrClosed ? 'success' : 'info',
+        },
+      }),
+    ]);
+
+    return { message: 'Ticket status updated.', ticket: updated };
   }
 
   @Patch('support/tickets/:id/resolve')
-  async resolveTicket(@Param('id') id: string, @Body() body: any) {
-    return this.prisma.supportTicket.update({
+  async resolveTicketCompat(@Param('id') id: string, @Body() body: any) {
+    return this.updateTicketStatus(id, { status: body.status || 'resolved', assigned_to: body.assigned_to, updated_by: body.assigned_to });
+  }
+
+  @Post('support/tickets/:id/assign')
+  async assignTicket(@Param('id') id: string, @Body() body: any) {
+    const { assigned_to, assigned_by } = body;
+    if (!assigned_to) throw new BadRequestException('assigned_to is required');
+
+    const ticket = await this.prisma.supportTicket.update({
       where: { id },
-      data: { status: body.status || 'resolved', resolved_at: new Date(), assigned_to: body.assigned_to },
+      data: { assigned_to, status: 'assigned', updated_at: new Date() },
     });
+
+    await Promise.all([
+      audit(this.prisma, {
+        user_id: assigned_by,
+        role: 'branch_manager',
+        action: `Assigned ticket ${ticket.ticket_number || ticket.id.slice(0, 8)} to employee ${assigned_to}`,
+        module: 'support',
+      }),
+      this.prisma.notification.create({
+        data: {
+          user_id: assigned_to,
+          title: `Ticket Assigned to You (${ticket.ticket_number || ticket.id.slice(0, 8)})`,
+          message: `Ticket "${ticket.subject}" has been assigned to you for resolution.`,
+          type: 'warning',
+        },
+      }),
+    ]);
+
+    return { message: 'Ticket assigned successfully.', ticket };
+  }
+
+  @Post('support/tickets/:id/escalate')
+  async escalateTicket(@Param('id') id: string, @Body() body: any) {
+    const { escalated_by, reason } = body;
+
+    const manager = await this.prisma.user.findFirst({
+      where: { role: 'branch_manager', is_active: true },
+    });
+
+    const ticket = await this.prisma.supportTicket.update({
+      where: { id },
+      data: {
+        escalated_to: manager ? manager.id : null,
+        escalated_at: new Date(),
+        assigned_to: manager ? manager.id : undefined,
+        status: 'in_progress',
+        updated_at: new Date(),
+      },
+    });
+
+    if (manager) {
+      await this.prisma.notification.create({
+        data: {
+          user_id: manager.id,
+          title: `Ticket Escalated (${ticket.ticket_number || ticket.id.slice(0, 8)})`,
+          message: `Ticket "${ticket.subject}" escalated by staff. Reason: ${reason || 'Requires manager approval'}`,
+          type: 'alert',
+        },
+      });
+    }
+
+    await audit(this.prisma, {
+      user_id: escalated_by,
+      role: 'staff',
+      action: `Escalated ticket ${ticket.ticket_number || ticket.id.slice(0, 8)} to Branch Manager. Reason: ${reason || 'N/A'}`,
+      module: 'support',
+    });
+
+    return { message: 'Ticket escalated to Branch Manager.', ticket };
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

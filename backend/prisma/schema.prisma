@@ -149,25 +149,32 @@ model Card {
 
 // ─── Loan ─────────────────────────────────────────────────────────────────────
 model Loan {
-  id                 String              @id @default(uuid())
-  loan_number        String              @unique @default(uuid())
-  amount             Decimal             @db.Decimal(18, 2)
-  approved_amount    Decimal?            @db.Decimal(18, 2)
-  disbursed_amount   Decimal?            @db.Decimal(18, 2)
-  duration_months    Int
-  rate               Decimal             @db.Decimal(5, 2)
-  loan_type          String              // personal|home|vehicle|education|business|gold
-  status             String              @default("pending")  // pending|under_review|approved|rejected|disbursed|closed
-  purpose            String?
-  collateral         String?
-  credit_score       Int?
-  approved_by        String?
-  disbursed_at       DateTime?
-  user_id            String
-  user               User                @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  repayments         LoanRepayment[]
-  created_at         DateTime            @default(now())
-  updated_at         DateTime            @updatedAt
+  id                    String              @id @default(uuid())
+  loan_number           String              @unique @default(uuid())
+  amount                Decimal             @db.Decimal(18, 2)
+  approved_amount       Decimal?            @db.Decimal(18, 2)
+  disbursed_amount      Decimal?            @db.Decimal(18, 2)
+  duration_months       Int
+  rate                  Decimal             @db.Decimal(5, 2)
+  loan_type             String              // personal|home|vehicle|education|business|gold
+  status                String              @default("pending")  // pending|under_review|approved|rejected|disbursed|closed|cancelled
+  purpose               String?
+  collateral            String?
+  credit_score          Int?
+  monthly_income        Decimal?            @db.Decimal(18, 2)
+  employment_status     String?             // salaried|self_employed|business|retired|student
+  employer_name         String?
+  existing_loan_details String?
+  remarks               String?             // customer notes
+  rejection_reason      String?
+  manager_remarks       String?
+  approved_by           String?
+  disbursed_at          DateTime?
+  user_id               String
+  user                  User                @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  repayments            LoanRepayment[]
+  created_at            DateTime            @default(now())
+  updated_at            DateTime            @updatedAt
 
   @@index([user_id])
   @@index([status])
@@ -292,20 +299,40 @@ model CashDrawer {
 // ─── Support Ticket ───────────────────────────────────────────────────────────
 model SupportTicket {
   id            String         @id @default(uuid())
+  ticket_number String         @unique @default("")
   subject       String
   description   String?
   priority      String         @default("medium")  // low|medium|high|urgent
-  status        String         @default("open")    // open|in_progress|resolved|closed
-  category      String         @default("general") // general|transaction|card|loan|account
+  status        String         @default("open")    // open|assigned|in_progress|waiting_for_customer|resolved|closed
+  category      String         @default("general") // account|transaction|loan|card|net_banking|mobile_banking|cheque|kyc|technical|complaints|suggestions|other
   user_id       String
   user          User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
   assigned_to   String?
+  escalated_to  String?
+  escalated_at  DateTime?
   resolved_at   DateTime?
   created_at    DateTime       @default(now())
   updated_at    DateTime       @updatedAt
+  replies       TicketReply[]
 
   @@index([user_id])
   @@index([status])
+  @@index([assigned_to])
+  @@index([ticket_number])
+}
+
+// ─── Ticket Reply ─────────────────────────────────────────────────────────────
+model TicketReply {
+  id         String        @id @default(uuid())
+  message    String
+  ticket_id  String
+  ticket     SupportTicket @relation(fields: [ticket_id], references: [id], onDelete: Cascade)
+  user_id    String
+  user_name  String?       // cached display name
+  user_role  String?       // customer|teller|branch_manager|super_admin
+  created_at DateTime      @default(now())
+
+  @@index([ticket_id])
 }
 
 // ─── Audit Log ────────────────────────────────────────────────────────────────
